@@ -1,5 +1,5 @@
 .{
-    .name = .@"quantum-curl",
+    .name = .quantum_curl,
     .version = "1.0.0",
     .fingerprint = 0x12345678deadbeef, // Placeholder - Zig will regenerate
     .minimum_zig_version = "0.14.0",

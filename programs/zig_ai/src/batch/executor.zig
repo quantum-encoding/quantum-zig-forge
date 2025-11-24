@@ -238,10 +238,7 @@ pub const BatchExecutor = struct {
                 ) catch return ai_common.AIError.AuthenticationFailed;
                 defer self.allocator.free(api_key);
 
-                var client = try anthropic.AnthropicClient.init(
-                    self.allocator,
-                    .{ .api_key = api_key },
-                );
+                var client = try ClaudeClient.init(self.allocator, api_key);
                 defer client.deinit();
 
                 break :blk try client.sendMessage(request.prompt, req_config);
@@ -253,10 +250,7 @@ pub const BatchExecutor = struct {
                 ) catch return ai_common.AIError.AuthenticationFailed;
                 defer self.allocator.free(api_key);
 
-                var client = try deepseek.DeepSeekClient.init(
-                    self.allocator,
-                    api_key,
-                );
+                var client = try DeepSeekClient.init(self.allocator, api_key);
                 defer client.deinit();
 
                 break :blk try client.sendMessage(request.prompt, req_config);
@@ -268,10 +262,7 @@ pub const BatchExecutor = struct {
                 ) catch return ai_common.AIError.AuthenticationFailed;
                 defer self.allocator.free(api_key);
 
-                var client = try gemini.GeminiClient.init(
-                    self.allocator,
-                    api_key,
-                );
+                var client = try GeminiClient.init(self.allocator, api_key);
                 defer client.deinit();
 
                 break :blk try client.sendMessage(request.prompt, req_config);
@@ -283,10 +274,7 @@ pub const BatchExecutor = struct {
                 ) catch return ai_common.AIError.AuthenticationFailed;
                 defer self.allocator.free(api_key);
 
-                var client = try grok.GrokClient.init(
-                    self.allocator,
-                    api_key,
-                );
+                var client = try GrokClient.init(self.allocator, api_key);
                 defer client.deinit();
 
                 break :blk try client.sendMessage(request.prompt, req_config);
@@ -298,10 +286,7 @@ pub const BatchExecutor = struct {
                 ) catch return ai_common.AIError.AuthenticationFailed;
                 defer self.allocator.free(project_id);
 
-                var client = try vertex.VertexClient.init(
-                    self.allocator,
-                    .{ .project_id = project_id },
-                );
+                var client = try VertexClient.init(self.allocator, .{ .project_id = project_id });
                 defer client.deinit();
 
                 break :blk try client.sendMessage(request.prompt, req_config);
