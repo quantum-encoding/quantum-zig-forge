@@ -222,19 +222,19 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     const concurrency_str = try std.fmt.allocPrint(allocator, "{d}", .{config.concurrency});
     defer allocator.free(concurrency_str);
 
-    // Output file for quantum-curl results
+    // Output file for quantum-curl results (use shell to redirect)
     const output_path = "/tmp/quantum_curl_bench_output.jsonl";
 
+    // Use shell to redirect stdout to file (avoids pipe buffer limits)
+    const shell_cmd = try std.fmt.allocPrint(
+        allocator,
+        "/home/founder/github_public/quantum-zig-forge/programs/quantum_curl/zig-out/bin/quantum-curl --file {s} --concurrency {s} > {s}",
+        .{ temp_path, concurrency_str, output_path },
+    );
+    defer allocator.free(shell_cmd);
+
     var child = std.process.Child.init(
-        &[_][]const u8{
-            "/home/founder/github_public/quantum-zig-forge/programs/quantum_curl/zig-out/bin/quantum-curl",
-            "--file",
-            temp_path,
-            "--concurrency",
-            concurrency_str,
-            "--output",
-            output_path,
-        },
+        &[_][]const u8{ "/bin/sh", "-c", shell_cmd },
         allocator,
     );
     child.stdout_behavior = .Ignore;
