@@ -271,7 +271,14 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     const stat = try output_file.stat();
     const output = try allocator.alloc(u8, stat.size);
     defer allocator.free(output);
-    _ = try output_file.readAll(output);
+
+    // Read file contents
+    var total_read: usize = 0;
+    while (total_read < output.len) {
+        const bytes_read = try output_file.read(output[total_read..]);
+        if (bytes_read == 0) break;
+        total_read += bytes_read;
+    }
 
     // Parse results and collect latencies
     var latencies = std.ArrayList(u64){};
