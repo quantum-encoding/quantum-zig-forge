@@ -71,7 +71,7 @@ pub fn main() !void {
     const end_time_ns = config.duration_seconds * std.time.ns_per_s;
 
     // Start worker threads
-    var workers = try allocator.alloc(std.Thread, config.concurrency);
+    const workers = try allocator.alloc(std.Thread, config.concurrency);
     defer allocator.free(workers);
 
     for (workers, 0..) |*worker, idx| {
