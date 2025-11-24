@@ -6,6 +6,50 @@ zig-cache/
 # Build artifacts in program directories
 programs/*/zig-out/
 programs/*/.zig-cache/
+programs/**/zig-out/
+programs/**/.zig-cache/
+
+# Prebuilt binaries (should be built from source)
+programs/*/bin/
+programs/*/bin_prebuilt/
+programs/**/bin/
+programs/**/bin_prebuilt/
+
+# Compiled test binaries and artifacts
+programs/*/tests/main
+programs/**/tests/main
+test_*
+!test_*.zig
+
+# Go binaries in financial_engine
+programs/financial_engine/go-bridge/account-check
+programs/financial_engine/go-bridge/trading_system_complete
+programs/financial_engine/go-bridge/crypto_demo
+programs/financial_engine/go-bridge/margin_demo
+programs/financial_engine/go-bridge/*.exe
+
+# Misc compiled binaries in source dirs
+programs/chronos_engine/src/chronos*
+programs/chronos_engine/src/cognitive-watcher
+programs/chronos_engine/src/cognitive-watcher-v2
+!programs/chronos_engine/src/*.zig
+programs/stratum_engine_claude/test_*
+!programs/stratum_engine_claude/test_*.zig
+
+# Compiled binaries without extension (ELF executables)
+programs/chronos_engine/tests/chronosd-dbus-test
+programs/timeseries_db/cli
+programs/stratum_engine_grok/mempool-sniffer
+programs/stratum_engine_grok/client
+
+# Large generated files
+vmlinux.h
+*.bpf.o
+*.db
+
+# Images (screenshots/pasted) - keep only essential diagrams
+programs/*/docs/*.png
+programs/**/docs/*.png
 
 # Test artifacts
 *.test

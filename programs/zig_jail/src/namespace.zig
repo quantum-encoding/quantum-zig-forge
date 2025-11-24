@@ -29,7 +29,7 @@ pub const MS_REMOUNT: u32 = 32;             // Remount existing mount
 // ============================================================
 
 pub const BindMount = struct {
-    source: []const u8,      // Host path (e.g., /home/founder/workspace)
+    source: []const u8,      // Host path (e.g., /home/user/workspace)
     target: []const u8,      // Sandbox path (e.g., /sandbox/workspace)
     readonly: bool,          // Mount as read-only
     recursive: bool,         // Recursive bind mount

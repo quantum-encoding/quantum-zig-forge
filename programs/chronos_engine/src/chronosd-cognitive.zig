@@ -164,7 +164,7 @@ pub const ChronosDaemon = struct {
                 // For now, we check cached cognitive state from monitor
 
                 // Check for cached cognitive state
-                const home = std.posix.getenv("HOME") orelse "/home/founder";
+                const home = std.posix.getenv("HOME") orelse "/tmp";
                 var state_path_buf: [512]u8 = undefined;
                 const state_path = try std.fmt.bufPrint(
                     &state_path_buf,

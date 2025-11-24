@@ -40,7 +40,6 @@ fn printUsage() void {
         \\Profile Search Paths:
         \\  /etc/zig-jail/profiles/<name>.json
         \\  ./profiles/<name>.json
-        \\  /home/founder/zig_forge/profiles/<name>.json
         \\
     , .{VERSION});
 }

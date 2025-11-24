@@ -161,7 +161,6 @@ const CONFIG_PATHS = [_][]const u8{
     "/etc/warden/warden-config.json",
     "/forge/config/warden-config-docker-test.json", // Docker test config
     "./config/warden-config.json",
-    "/home/founder/zig_forge/config/warden-config.json",
 };
 
 /// Load configuration from JSON file
@@ -271,12 +270,10 @@ pub fn getDefaultConfig(allocator: std.mem.Allocator) !Config {
         .block_operations = &[_][]const u8{ "unlink", "unlinkat", "rmdir", "open_write" },
     };
 
-    var whitelisted_paths = try allocator.alloc(WhitelistedPath, 5);
+    var whitelisted_paths = try allocator.alloc(WhitelistedPath, 3);
     whitelisted_paths[0] = WhitelistedPath{ .path = "/proc/self/", .description = "Process-specific" };
     whitelisted_paths[1] = WhitelistedPath{ .path = "/tmp/", .description = "Temporary directory" };
-    whitelisted_paths[2] = WhitelistedPath{ .path = "/home/founder/tmp/", .description = "User temp" };
-    whitelisted_paths[3] = WhitelistedPath{ .path = "/home/founder/sandbox/", .description = "Sandbox" };
-    whitelisted_paths[4] = WhitelistedPath{ .path = "/home/founder/.claude/", .description = "Claude Code directory" };
+    whitelisted_paths[2] = WhitelistedPath{ .path = "/var/tmp/", .description = "Persistent temp directory" };
 
     return Config{
         .global = GlobalConfig{},

@@ -78,7 +78,6 @@ pub const Profile = struct {
 const PROFILE_SEARCH_PATHS = [_][]const u8{
     "/etc/zig-jail/profiles",
     "./profiles",
-    "/home/founder/zig_forge/profiles",
 };
 
 /// Load a profile by name (e.g., "minimal", "python-safe")

@@ -78,7 +78,7 @@ fn printUsage() !void {
         \\EXAMPLES:
         \\  duckagent-scribe init --agent-id 001 --batch-id batch-20251024-140812 \
         \\    --task "Write blog post" --provider grok --max-turns 50 \
-        \\    --retry-number 0 --crucible-path /home/founder/crucible/grok-... --pid 12345
+        \\    --retry-number 0 --crucible-path ~/crucible/grok-... --pid 12345
         \\
         \\  duckagent-scribe complete --agent-id 001 --batch-id batch-20251024-140812 \
         \\    --status SUCCESS --turns-taken 1 --tokens-used 3986
