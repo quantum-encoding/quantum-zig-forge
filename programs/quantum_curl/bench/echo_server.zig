@@ -72,7 +72,9 @@ pub fn main() !void {
 
         // Print stats every 1000 requests
         if (request_count % 1000 == 0) {
-            const elapsed_ms = std.time.milliTimestamp() - start_time;
+            const now = std.time.Instant.now() catch unreachable;
+            const elapsed_ns = now.since(start_instant);
+            const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
             const rps = if (elapsed_ms > 0)
                 @as(f64, @floatFromInt(request_count)) / (@as(f64, @floatFromInt(elapsed_ms)) / 1000.0)
             else
