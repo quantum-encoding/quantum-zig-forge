@@ -228,6 +228,10 @@ fn makeDirectRequest(url: []const u8) bool {
     const sockfd = posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0) catch return false;
     defer posix.close(sockfd);
 
+    // Disable Nagle's algorithm for lower latency
+    const nodelay: u32 = 1;
+    posix.setsockopt(sockfd, posix.IPPROTO.TCP, std.posix.TCP.NODELAY, std.mem.asBytes(&nodelay)) catch {};
+
     const addr = posix.sockaddr.in{
         .family = posix.AF.INET,
         .port = std.mem.nativeToBig(u16, 8888),
@@ -238,13 +242,22 @@ fn makeDirectRequest(url: []const u8) bool {
 
     // Send minimal HTTP request
     const request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    _ = posix.write(sockfd, request) catch return false;
+    const written = posix.write(sockfd, request) catch return false;
+    if (written != request.len) return false;
 
-    // Read response (blocking)
+    // Read response - loop until we get data or error
     var buf: [256]u8 = undefined;
-    const n = posix.read(sockfd, &buf) catch return false;
+    var total_read: usize = 0;
+    while (total_read == 0) {
+        const n = posix.read(sockfd, buf[total_read..]) catch |err| {
+            if (err == error.WouldBlock) continue;
+            return false;
+        };
+        if (n == 0) return false; // Connection closed without data
+        total_read += n;
+    }
 
-    return n > 0;
+    return total_read > 0;
 }
 
 fn printUsage() void {
