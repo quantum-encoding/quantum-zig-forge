@@ -262,9 +262,10 @@ fn makeDirectRequest(url: []const u8) bool {
     var buf: [1024]u8 = undefined;
     const n = posix.read(sockfd, &buf) catch return false;
 
-    // Check for HTTP 200
-    if (n > 12) {
-        return std.mem.startsWith(u8, buf[0..n], "HTTP/1.1 200");
+    // Check for HTTP 200 - response starts with "HTTP/1.1 200 OK"
+    if (n >= 15) {
+        // The response from echo server is "HTTP/1.1 200 OK\r\n..."
+        return std.mem.startsWith(u8, buf[0..n], "HTTP/1.1 200 OK");
     }
 
     return false;
