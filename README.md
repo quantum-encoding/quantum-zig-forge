@@ -7,6 +7,7 @@ A monorepo of production-grade Zig programs and libraries developed by QUANTUM E
 ```
 quantum-zig-forge/
 ├── programs/             # Standalone programs
+│   ├── quantum_curl/     # High-velocity command-driven HTTP router [PREMIER]
 │   ├── http_sentinel/    # Production HTTP client library
 │   ├── guardian_shield/  # Multi-layered Linux security framework
 │   ├── chronos_engine/   # Sovereign Clock temporal tracking system
