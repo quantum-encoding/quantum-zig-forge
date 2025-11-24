@@ -49,6 +49,7 @@ All binaries will be placed in `zig-out/bin/` at the repository root.
 ### Build Specific Programs
 
 ```bash
+zig build quantum_curl
 zig build http_sentinel
 zig build guardian_shield
 zig build chronos_engine
