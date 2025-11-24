@@ -27,7 +27,7 @@ const BenchmarkResult = struct {
     p99_latency_ms: u64,
     requests_per_second: f64,
 
-    pub fn toJson(self: *const BenchmarkResult, writer: anytype) !void {
+    pub fn toJson(self: *const BenchmarkResult, writer: *std.Io.Writer) !void {
         try writer.print(
             \\{{
             \\  "name": "{s}",
