@@ -65,22 +65,41 @@ pub fn Engine(comptime WriterType: type) type {
             const max_concurrent = @min(self.config.max_concurrency, requests.len);
 
             // Thread pool - spawn threads up to max_concurrency
-            var threads = try self.allocator.alloc(std.Thread, max_concurrent);
+            var threads = try self.allocator.alloc(?std.Thread, max_concurrent);
             defer self.allocator.free(threads);
+
+            // Initialize all thread slots to null
+            for (threads) |*t| {
+                t.* = null;
+            }
 
             var request_index: usize = 0;
             while (request_index < requests.len) {
                 // Spawn threads up to max_concurrency
                 const batch_size = @min(max_concurrent, requests.len - request_index);
+                var spawned_count: usize = 0;
 
                 for (0..batch_size) |i| {
                     const req_idx = request_index + i;
-                    threads[i] = try std.Thread.spawn(.{}, processRequestThread, .{ self, &requests[req_idx] });
+                    threads[i] = std.Thread.spawn(.{}, processRequestThread, .{ self, &requests[req_idx] }) catch |err| {
+                        // Log spawn failure and process request synchronously
+                        std.debug.print("Thread spawn failed: {}, processing synchronously\n", .{err});
+                        self.processRequest(&requests[req_idx]);
+                        continue;
+                    };
+                    spawned_count += 1;
                 }
 
-                // Wait for this batch to complete before spawning next wave
-                for (threads[0..batch_size]) |thread| {
-                    thread.join();
+                // Wait for all spawned threads in this batch to complete
+                for (threads[0..batch_size]) |maybe_thread| {
+                    if (maybe_thread) |thread| {
+                        thread.join();
+                    }
+                }
+
+                // Reset thread slots for next batch
+                for (threads[0..batch_size]) |*t| {
+                    t.* = null;
                 }
 
                 request_index += batch_size;
