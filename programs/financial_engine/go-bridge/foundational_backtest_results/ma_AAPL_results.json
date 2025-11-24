@@ -1,0 +1,25 @@
+{
+  "avg_loss": -362.2119429999977,
+  "avg_trade": -99.80266785714022,
+  "avg_win": 556.2205200000035,
+  "calmar_ratio": -0.32295286795254863,
+  "hold_time": "493h42m51.428571428s",
+  "largest_loss": -507.82260999999744,
+  "largest_win": 962.184860000003,
+  "max_drawdown": 2.167864323616144,
+  "parameters": {
+    "long_period": 20,
+    "short_period": 10,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1
+  },
+  "profit_factor": 0.614248680364476,
+  "sharpe_ratio": -2.0848964838318342,
+  "sortino_ratio": -1.1845745699240446,
+  "strategy": "ma",
+  "symbol": "AAPL",
+  "test_date": "2025-08-29T22:14:47+02:00",
+  "total_return": -1.397232349999991,
+  "total_trades": 14,
+  "win_rate": 28.57142857142857
+}

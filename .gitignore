@@ -1,0 +1,33 @@
+# Zig build artifacts
+zig-out/
+.zig-cache/
+zig-cache/
+
+# Build artifacts in program directories
+programs/*/zig-out/
+programs/*/.zig-cache/
+
+# Test artifacts
+*.test
+test_stdio
+
+# Batch processing results
+batch_results_*.csv
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+
+# OS-specific
+Thumbs.db

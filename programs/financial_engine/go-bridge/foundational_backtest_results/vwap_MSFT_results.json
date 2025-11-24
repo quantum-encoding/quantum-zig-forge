@@ -1,0 +1,25 @@
+{
+  "avg_loss": -503.9675199999977,
+  "avg_trade": 136.06126200000273,
+  "avg_win": 410.35931142857436,
+  "calmar_ratio": 0.6644465892752889,
+  "hold_time": "432h6m0s",
+  "largest_loss": -507.9577599999957,
+  "largest_win": 587.3012000000035,
+  "max_drawdown": 1.019009213969862,
+  "parameters": {
+    "deviation_pct": 0.02,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1,
+    "vwap_period": 20
+  },
+  "profit_factor": 1.8999340671795895,
+  "sharpe_ratio": -1.3295009211457731,
+  "sortino_ratio": -0.6876494856408067,
+  "strategy": "vwap",
+  "symbol": "MSFT",
+  "test_date": "2025-08-29T22:14:50+02:00",
+  "total_return": 1.36061262,
+  "total_trades": 10,
+  "win_rate": 70
+}

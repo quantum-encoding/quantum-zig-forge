@@ -1,0 +1,8 @@
+.{
+    .name = "quantum_zig_forge",
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{
+        "",
+    },
+}

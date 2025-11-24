@@ -1,0 +1,25 @@
+{
+  "avg_loss": -399.42310571428345,
+  "avg_trade": 86.08140857143124,
+  "avg_win": 571.585922857146,
+  "calmar_ratio": 0.24966136290591803,
+  "hold_time": "586h21m25.714285714s",
+  "largest_loss": -508.4595999999983,
+  "largest_win": 983.9034800000027,
+  "max_drawdown": 2.4030188645447965,
+  "parameters": {
+    "long_period": 20,
+    "short_period": 10,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1
+  },
+  "profit_factor": 1.431028687824621,
+  "sharpe_ratio": -0.738112644093725,
+  "sortino_ratio": -0.47437822662176077,
+  "strategy": "ma",
+  "symbol": "GOOGL",
+  "test_date": "2025-08-29T22:14:47+02:00",
+  "total_return": 1.2051397200000358,
+  "total_trades": 14,
+  "win_rate": 50
+}

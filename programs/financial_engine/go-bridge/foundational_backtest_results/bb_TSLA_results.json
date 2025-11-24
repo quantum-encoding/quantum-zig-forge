@@ -1,0 +1,25 @@
+{
+  "avg_loss": -500.4755499999974,
+  "avg_trade": 236.68245500000316,
+  "avg_win": 973.8404600000036,
+  "calmar_ratio": 0.5187394505755497,
+  "hold_time": "168h0m0s",
+  "largest_loss": -505.162449999998,
+  "largest_win": 986.4755000000041,
+  "max_drawdown": 1.3620960299999862,
+  "parameters": {
+    "num_std_dev": 2,
+    "period": 20,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1
+  },
+  "profit_factor": 1.9458302408579375,
+  "sharpe_ratio": -0.9845069554454041,
+  "sortino_ratio": -0.4100013111514716,
+  "strategy": "bb",
+  "symbol": "TSLA",
+  "test_date": "2025-08-29T22:14:49+02:00",
+  "total_return": 1.4200947300000117,
+  "total_trades": 6,
+  "win_rate": 50
+}

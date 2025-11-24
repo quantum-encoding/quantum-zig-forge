@@ -1,0 +1,26 @@
+{
+  "avg_loss": -499.70621499999834,
+  "avg_trade": 93.81845600000233,
+  "avg_win": 489.5015700000028,
+  "calmar_ratio": 0.36256266858571584,
+  "hold_time": "547h0m0s",
+  "largest_loss": -507.248349999998,
+  "largest_win": 829.7293100000043,
+  "max_drawdown": 0.6452701514014679,
+  "parameters": {
+    "overbought_level": 70,
+    "oversold_level": 30,
+    "rsi_period": 14,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1
+  },
+  "profit_factor": 1.4693680665949025,
+  "sharpe_ratio": -2.9082842484951557,
+  "sortino_ratio": -1.144075834243096,
+  "strategy": "rsi",
+  "symbol": "SPY",
+  "test_date": "2025-08-29T22:14:51+02:00",
+  "total_return": 0.4690922800000117,
+  "total_trades": 5,
+  "win_rate": 60
+}

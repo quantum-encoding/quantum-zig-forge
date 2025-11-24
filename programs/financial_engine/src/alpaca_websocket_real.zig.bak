@@ -1,0 +1,289 @@
+// REAL ALPACA WEBSOCKET CONNECTION
+// Using karlseguin/websocket.zig for actual WebSocket connectivity
+
+const std = @import("std");
+const websocket = @import("websocket/websocket.zig");
+
+pub const AlpacaRealWebSocket = struct {
+    allocator: std.mem.Allocator,
+    client: websocket.Client,
+    api_key: []const u8,
+    api_secret: []const u8,
+    paper_trading: bool,
+    
+    // Message queues for market data (using lock-free circular buffers)
+    quote_queue: LockFreeQueue(QuoteMessage, 4096),
+    trade_queue: LockFreeQueue(TradeMessage, 4096),
+    
+    // Thread handles
+    read_thread: ?std.Thread = null,
+    
+    const Self = @This();
+    
+    // Simple lock-free queue implementation
+    fn LockFreeQueue(comptime T: type, comptime size: usize) type {
+        return struct {
+            const Queue = @This();
+            const SIZE = size;
+            const MASK = size - 1;
+            
+            buffer: [SIZE]T,
+            head: std.atomic.Value(usize),
+            tail: std.atomic.Value(usize),
+            
+            pub fn init() Queue {
+                return Queue{
+                    .buffer = undefined,
+                    .head = std.atomic.Value(usize).init(0),
+                    .tail = std.atomic.Value(usize).init(0),
+                };
+            }
+            
+            pub fn push(self: *Queue, item: T) bool {
+                const current_head = self.head.load(.acquire);
+                const next_head = (current_head + 1) & MASK;
+                const current_tail = self.tail.load(.acquire);
+                
+                if (next_head == current_tail) {
+                    return false; // Queue full
+                }
+                
+                self.buffer[current_head] = item;
+                self.head.store(next_head, .release);
+                return true;
+            }
+            
+            pub fn pop(self: *Queue) ?T {
+                const current_tail = self.tail.load(.acquire);
+                const current_head = self.head.load(.acquire);
+                
+                if (current_tail == current_head) {
+                    return null; // Queue empty
+                }
+                
+                const item = self.buffer[current_tail];
+                self.tail.store((current_tail + 1) & MASK, .release);
+                return item;
+            }
+        };
+    }
+    
+    pub const QuoteMessage = struct {
+        symbol: [16]u8,
+        bid: f64,
+        ask: f64,
+        bid_size: u32,
+        ask_size: u32,
+        timestamp: i64,
+    };
+    
+    pub const TradeMessage = struct {
+        symbol: [16]u8,
+        price: f64,
+        size: u32,
+        timestamp: i64,
+    };
+    
+    pub fn init(allocator: std.mem.Allocator, api_key: []const u8, api_secret: []const u8, paper_trading: bool) !Self {
+        const host = if (paper_trading) "paper-api.alpaca.markets" else "stream.data.alpaca.markets";
+        
+        // Create WebSocket client
+        const client = try websocket.Client.init(allocator, .{
+            .host = host,
+            .port = 443,
+            .tls = true,
+        });
+        
+        return .{
+            .allocator = allocator,
+            .client = client,
+            .api_key = api_key,
+            .api_secret = api_secret,
+            .paper_trading = paper_trading,
+            .quote_queue = LockFreeQueue(QuoteMessage, 4096).init(),
+            .trade_queue = LockFreeQueue(TradeMessage, 4096).init(),
+        };
+    }
+    
+    pub fn connect(self: *Self) !void {
+        std.log.info("🔌 Connecting to REAL Alpaca WebSocket...", .{});
+        
+        // Connect with PERFECT WebSocket handshake (from reconnaissance)
+        const host = if (self.paper_trading) "paper-api.alpaca.markets" else "stream.data.alpaca.markets";
+        const headers_buf = try std.fmt.allocPrint(
+            self.allocator,
+            "Host: {s}\r\nOrigin: https://alpaca.markets\r\nUser-Agent: QuantumSynapseEngine/1.0\r\n",
+            .{host}
+        );
+        defer self.allocator.free(headers_buf);
+        
+        try self.client.handshake("/stream", .{
+            .timeout_ms = 10000,
+            .headers = headers_buf,
+        });
+        
+        std.log.info("✅ REAL WebSocket connection established!", .{});
+        
+        // Start read thread
+        self.read_thread = try std.Thread.spawn(.{}, readLoop, .{self});
+        
+        // Send authentication
+        try self.authenticate();
+    }
+    
+    fn authenticate(self: *Self) !void {
+        std.log.info("🔐 Authenticating with Alpaca...", .{});
+        
+        const auth_msg = try std.fmt.allocPrint(
+            self.allocator,
+            "{{\"action\":\"auth\",\"key\":\"{s}\",\"secret\":\"{s}\"}}",
+            .{ self.api_key, self.api_secret }
+        );
+        defer self.allocator.free(auth_msg);
+        
+        try self.client.writeText(auth_msg);
+        std.log.info("📤 Auth message sent", .{});
+    }
+    
+    pub fn subscribe(self: *Self, symbols: []const []const u8) !void {
+        std.log.info("📊 Subscribing to {} symbols...", .{symbols.len});
+        
+        // Build symbol list
+        var symbol_list = try std.ArrayList(u8).initCapacity(self.allocator, 1024);
+        defer symbol_list.deinit(self.allocator);
+        
+        try symbol_list.append(self.allocator, '[');
+        for (symbols, 0..) |symbol, i| {
+            if (i > 0) try symbol_list.append(self.allocator, ',');
+            try symbol_list.append(self.allocator, '"');
+            try symbol_list.appendSlice(self.allocator, symbol);
+            try symbol_list.append(self.allocator, '"');
+        }
+        try symbol_list.append(self.allocator, ']');
+        
+        const sub_msg = try std.fmt.allocPrint(
+            self.allocator,
+            "{{\"action\":\"subscribe\",\"quotes\":{s},\"trades\":{s}}}",
+            .{ symbol_list.items, symbol_list.items }
+        );
+        defer self.allocator.free(sub_msg);
+        
+        try self.client.writeText(sub_msg);
+        std.log.info("📤 Subscription sent", .{});
+    }
+    
+    fn readLoop(self: *Self) !void {
+        std.log.info("👂 WebSocket read loop started", .{});
+        
+        while (true) {
+            const msg_result = self.client.read() catch |err| {
+                std.log.err("WebSocket read error: {}", .{err});
+                break;
+            };
+            
+            if (msg_result) |msg| {
+                switch (msg.type) {
+                    .text => {
+                        self.processMessage(msg.data) catch |err| {
+                            std.log.err("Message processing error: {}", .{err});
+                        };
+                    },
+                    .close => {
+                        std.log.info("WebSocket closed by server", .{});
+                        break;
+                    },
+                    else => {},
+                }
+            } else {
+                // No message available, continue
+                std.Thread.sleep(1 * std.time.ns_per_ms);
+            }
+        }
+    }
+    
+    fn processMessage(self: *Self, data: []const u8) !void {
+        // Parse JSON message
+        var parsed = std.json.parseFromSlice(std.json.Value, self.allocator, data, .{}) catch |err| {
+            std.log.warn("JSON parse error: {}", .{err});
+            return;
+        };
+        defer parsed.deinit();
+        
+        const root = parsed.value;
+        
+        // Check message type
+        if (root.object.get("T")) |msg_type| {
+            const type_str = msg_type.string;
+            
+            if (std.mem.eql(u8, type_str, "q")) {
+                // Quote message
+                try self.processQuote(root);
+            } else if (std.mem.eql(u8, type_str, "t")) {
+                // Trade message
+                try self.processTrade(root);
+            } else if (std.mem.eql(u8, type_str, "success")) {
+                std.log.info("✅ {s}", .{data});
+            } else if (std.mem.eql(u8, type_str, "error")) {
+                std.log.err("❌ Alpaca error: {s}", .{data});
+            }
+        }
+    }
+    
+    fn processQuote(self: *Self, root: std.json.Value) !void {
+        const symbol = root.object.get("S").?.string;
+        const bid = root.object.get("bp").?.float;
+        const ask = root.object.get("ap").?.float;
+        const bid_size: u32 = @intCast(root.object.get("bs").?.integer);
+        const ask_size: u32 = @intCast(root.object.get("as").?.integer);
+        const timestamp = root.object.get("t").?.integer;
+        
+        var quote = QuoteMessage{
+            .symbol = undefined,
+            .bid = bid,
+            .ask = ask,
+            .bid_size = bid_size,
+            .ask_size = ask_size,
+            .timestamp = timestamp,
+        };
+        
+        // Copy symbol
+        @memset(&quote.symbol, 0);
+        @memcpy(quote.symbol[0..symbol.len], symbol);
+        
+        // Add to queue
+        if (!self.quote_queue.push(quote)) {
+            std.log.warn("Quote queue full, dropping message", .{});
+        }
+    }
+    
+    fn processTrade(self: *Self, root: std.json.Value) !void {
+        const symbol = root.object.get("S").?.string;
+        const price = root.object.get("p").?.float;
+        const size: u32 = @intCast(root.object.get("s").?.integer);
+        const timestamp = root.object.get("t").?.integer;
+        
+        var trade = TradeMessage{
+            .symbol = undefined,
+            .price = price,
+            .size = size,
+            .timestamp = timestamp,
+        };
+        
+        // Copy symbol
+        @memset(&trade.symbol, 0);
+        @memcpy(trade.symbol[0..symbol.len], symbol);
+        
+        // Add to queue
+        if (!self.trade_queue.push(trade)) {
+            std.log.warn("Trade queue full, dropping message", .{});
+        }
+    }
+    
+    pub fn deinit(self: *Self) void {
+        self.client.close(.{}) catch {};
+        if (self.read_thread) |thread| {
+            thread.join();
+        }
+        self.client.deinit();
+    }
+};

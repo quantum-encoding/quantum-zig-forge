@@ -1,0 +1,810 @@
+package backtesting
+
+import (
+	"fmt"
+	"zig-hft-bridge/strategies"
+)
+
+// OptimizableRSI wraps RSI strategy for parameter optimization
+type OptimizableRSI struct {
+	*strategies.RSIMeanReversionStrategy
+	symbol string
+}
+
+// NewOptimizableRSI creates an optimizable RSI strategy
+func NewOptimizableRSI(symbol string) *OptimizableRSI {
+	return &OptimizableRSI{
+		RSIMeanReversionStrategy: strategies.NewRSIMeanReversionStrategy(symbol),
+		symbol: symbol,
+	}
+}
+
+// SetParameters updates strategy parameters
+func (s *OptimizableRSI) SetParameters(params map[string]interface{}) error {
+	if period, ok := params["rsi_period"].(int); ok {
+		s.RSIPeriod = period
+	}
+	if oversold, ok := params["oversold"].(float64); ok {
+		s.OversoldLevel = oversold
+	}
+	if overbought, ok := params["overbought"].(float64); ok {
+		s.OverboughtLevel = overbought
+	}
+	if stopLoss, ok := params["stop_loss"].(float64); ok {
+		s.StopLossPct = stopLoss
+	}
+	if takeProfit, ok := params["take_profit"].(float64); ok {
+		s.TakeProfitPct = takeProfit
+	}
+	if useTrend, ok := params["use_trend"].(bool); ok {
+		s.UseTrendFilter = useTrend
+	}
+	return nil
+}
+
+// GetParameterRanges defines optimization ranges for RSI
+func (s *OptimizableRSI) GetParameterRanges() map[string]ParameterRange {
+	return map[string]ParameterRange{
+		"rsi_period": {
+			Name: "rsi_period",
+			Type: "int",
+			Min:  10,
+			Max:  20,
+			Step: 2,
+			Current: s.RSIPeriod,
+		},
+		"oversold": {
+			Name: "oversold",
+			Type: "float",
+			Min:  20.0,
+			Max:  40.0,
+			Step: 5.0,
+			Current: s.OversoldLevel,
+		},
+		"overbought": {
+			Name: "overbought",
+			Type: "float",
+			Min:  60.0,
+			Max:  80.0,
+			Step: 5.0,
+			Current: s.OverboughtLevel,
+		},
+		"stop_loss": {
+			Name: "stop_loss",
+			Type: "float",
+			Min:  0.01,
+			Max:  0.03,
+			Step: 0.005,
+			Current: s.StopLossPct,
+		},
+		"take_profit": {
+			Name: "take_profit",
+			Type: "float",
+			Min:  0.02,
+			Max:  0.05,
+			Step: 0.005,
+			Current: s.TakeProfitPct,
+		},
+		"use_trend": {
+			Name: "use_trend",
+			Type: "bool",
+			Min:  false,
+			Max:  true,
+			Step: true,
+			Current: s.UseTrendFilter,
+		},
+	}
+}
+
+// Clone creates a copy of the strategy
+func (s *OptimizableRSI) Clone() OptimizableStrategy {
+	clone := NewOptimizableRSI(s.symbol)
+	clone.SetParameters(s.GetCurrentParameters())
+	return clone
+}
+
+// GetCurrentParameters returns current parameter values
+func (s *OptimizableRSI) GetCurrentParameters() map[string]interface{} {
+	return map[string]interface{}{
+		"rsi_period": s.RSIPeriod,
+		"oversold": s.OversoldLevel,
+		"overbought": s.OverboughtLevel,
+		"stop_loss": s.StopLossPct,
+		"take_profit": s.TakeProfitPct,
+		"use_trend": s.UseTrendFilter,
+	}
+}
+
+// ProcessBar implements BacktestStrategy interface
+func (s *OptimizableRSI) ProcessBar(bar Bar, portfolio *Portfolio) Signal {
+	// Convert to strategy bar format and process
+	s.RSIMeanReversionStrategy.ProcessBar(bar.Close, bar.Time)
+	
+	// Generate signal based on RSI logic
+	signal := s.generateBacktestSignal(bar.Close)
+	
+	return Signal{
+		Action: signal,
+		Price: bar.Close,
+		StopLoss: bar.Close * (1 - s.StopLossPct),
+		TakeProfit: bar.Close * (1 + s.TakeProfitPct),
+	}
+}
+
+// generateBacktestSignal converts strategy logic to backtest signals
+func (s *OptimizableRSI) generateBacktestSignal(price float64) string {
+	if s.currentRSI < s.OversoldLevel && !s.hasPosition {
+		if s.UseTrendFilter && s.trendMA > 0 {
+			if price < s.trendMA * 0.98 {
+				return "HOLD"
+			}
+		}
+		return "BUY"
+	}
+	
+	if s.currentRSI > s.OverboughtLevel && s.hasPosition {
+		return "SELL"
+	}
+	
+	return "HOLD"
+}
+
+// GetParameters implements BacktestStrategy
+func (s *OptimizableRSI) GetParameters() map[string]interface{} {
+	return s.GetCurrentParameters()
+}
+
+// Reset implements BacktestStrategy
+func (s *OptimizableRSI) Reset() {
+	s.pricesA = []float64{}
+	s.pricesB = []float64{}
+	s.gains = []float64{}
+	s.losses = []float64{}
+	s.currentRSI = 50.0
+	s.hasPosition = false
+}
+
+// OptimizableMA wraps Moving Average strategy
+type OptimizableMA struct {
+	*strategies.MovingAverageCrossoverStrategy
+	symbol string
+}
+
+// NewOptimizableMA creates an optimizable MA strategy
+func NewOptimizableMA(symbol string) *OptimizableMA {
+	return &OptimizableMA{
+		MovingAverageCrossoverStrategy: strategies.NewMovingAverageCrossoverStrategy(symbol, 50, 200),
+		symbol: symbol,
+	}
+}
+
+// SetParameters updates MA parameters
+func (s *OptimizableMA) SetParameters(params map[string]interface{}) error {
+	if shortWindow, ok := params["short_window"].(int); ok {
+		s.ShortWindow = shortWindow
+	}
+	if longWindow, ok := params["long_window"].(int); ok {
+		s.LongWindow = longWindow
+	}
+	if stopLoss, ok := params["stop_loss"].(float64); ok {
+		s.StopLossPct = stopLoss
+	}
+	if takeProfit, ok := params["take_profit"].(float64); ok {
+		s.TakeProfitPct = takeProfit
+	}
+	return nil
+}
+
+// GetParameterRanges defines optimization ranges for MA
+func (s *OptimizableMA) GetParameterRanges() map[string]ParameterRange {
+	return map[string]ParameterRange{
+		"short_window": {
+			Name: "short_window",
+			Type: "int",
+			Min:  20,
+			Max:  100,
+			Step: 10,
+			Current: s.ShortWindow,
+		},
+		"long_window": {
+			Name: "long_window",
+			Type: "int",
+			Min:  100,
+			Max:  300,
+			Step: 20,
+			Current: s.LongWindow,
+		},
+		"stop_loss": {
+			Name: "stop_loss",
+			Type: "float",
+			Min:  0.01,
+			Max:  0.04,
+			Step: 0.01,
+			Current: s.StopLossPct,
+		},
+		"take_profit": {
+			Name: "take_profit",
+			Type: "float",
+			Min:  0.03,
+			Max:  0.08,
+			Step: 0.01,
+			Current: s.TakeProfitPct,
+		},
+	}
+}
+
+// Clone creates a copy
+func (s *OptimizableMA) Clone() OptimizableStrategy {
+	clone := NewOptimizableMA(s.symbol)
+	clone.SetParameters(s.GetCurrentParameters())
+	return clone
+}
+
+// GetCurrentParameters returns current values
+func (s *OptimizableMA) GetCurrentParameters() map[string]interface{} {
+	return map[string]interface{}{
+		"short_window": s.ShortWindow,
+		"long_window": s.LongWindow,
+		"stop_loss": s.StopLossPct,
+		"take_profit": s.TakeProfitPct,
+	}
+}
+
+// ProcessBar implements BacktestStrategy
+func (s *OptimizableMA) ProcessBar(bar Bar, portfolio *Portfolio) Signal {
+	s.MovingAverageCrossoverStrategy.ProcessBar(bar.Close, bar.Time)
+	
+	signal := "HOLD"
+	if s.shortMA > s.longMA && !s.hasPosition {
+		signal = "BUY"
+	} else if s.shortMA < s.longMA && s.hasPosition {
+		signal = "SELL"
+	}
+	
+	return Signal{
+		Action: signal,
+		Price: bar.Close,
+		StopLoss: bar.Close * (1 - s.StopLossPct),
+		TakeProfit: bar.Close * (1 + s.TakeProfitPct),
+	}
+}
+
+// GetParameters implements BacktestStrategy
+func (s *OptimizableMA) GetParameters() map[string]interface{} {
+	return s.GetCurrentParameters()
+}
+
+// Reset implements BacktestStrategy
+func (s *OptimizableMA) Reset() {
+	s.prices = []float64{}
+	s.shortMA = 0
+	s.longMA = 0
+	s.hasPosition = false
+}
+
+// OptimizableBollinger wraps Bollinger Bands strategy
+type OptimizableBollinger struct {
+	*strategies.BollingerBandsStrategy
+	symbol string
+}
+
+// NewOptimizableBollinger creates an optimizable BB strategy
+func NewOptimizableBollinger(symbol string) *OptimizableBollinger {
+	return &OptimizableBollinger{
+		BollingerBandsStrategy: strategies.NewBollingerBandsStrategy(symbol, 20),
+		symbol: symbol,
+	}
+}
+
+// SetParameters updates BB parameters
+func (s *OptimizableBollinger) SetParameters(params map[string]interface{}) error {
+	if period, ok := params["bb_period"].(int); ok {
+		s.Period = period
+	}
+	if stdDevs, ok := params["std_devs"].(float64); ok {
+		s.StdDevs = stdDevs
+	}
+	if volumeFactor, ok := params["volume_factor"].(float64); ok {
+		s.VolumeFactor = volumeFactor
+	}
+	if deviation, ok := params["vwap_deviation"].(float64); ok {
+		s.VWAPDeviation = deviation
+	}
+	if squeeze, ok := params["squeeze_threshold"].(float64); ok {
+		s.SqueezeThreshold = squeeze
+	}
+	return nil
+}
+
+// GetParameterRanges defines BB optimization ranges
+func (s *OptimizableBollinger) GetParameterRanges() map[string]ParameterRange {
+	return map[string]ParameterRange{
+		"bb_period": {
+			Name: "bb_period",
+			Type: "int",
+			Min:  15,
+			Max:  30,
+			Step: 5,
+			Current: s.Period,
+		},
+		"std_devs": {
+			Name: "std_devs",
+			Type: "float",
+			Min:  1.5,
+			Max:  3.0,
+			Step: 0.5,
+			Current: s.StdDevs,
+		},
+		"volume_factor": {
+			Name: "volume_factor",
+			Type: "float",
+			Min:  1.0,
+			Max:  2.5,
+			Step: 0.5,
+			Current: s.VolumeFactor,
+		},
+		"squeeze_threshold": {
+			Name: "squeeze_threshold",
+			Type: "float",
+			Min:  0.01,
+			Max:  0.04,
+			Step: 0.01,
+			Current: s.SqueezeThreshold,
+		},
+	}
+}
+
+// Clone creates a copy
+func (s *OptimizableBollinger) Clone() OptimizableStrategy {
+	clone := NewOptimizableBollinger(s.symbol)
+	clone.SetParameters(s.GetCurrentParameters())
+	return clone
+}
+
+// GetCurrentParameters returns current values
+func (s *OptimizableBollinger) GetCurrentParameters() map[string]interface{} {
+	return map[string]interface{}{
+		"bb_period": s.Period,
+		"std_devs": s.StdDevs,
+		"volume_factor": s.VolumeFactor,
+		"squeeze_threshold": s.SqueezeThreshold,
+	}
+}
+
+// ProcessBar implements BacktestStrategy
+func (s *OptimizableBollinger) ProcessBar(bar Bar, portfolio *Portfolio) Signal {
+	s.BollingerBandsStrategy.ProcessBar(bar.Close, bar.Volume, bar.Time)
+	
+	signal := "HOLD"
+	
+	// Breakout signals
+	if bar.Close > s.upperBand && bar.Volume > s.avgVolume * s.VolumeFactor && !s.inSqueeze && !s.hasPosition {
+		signal = "BUY"
+	} else if bar.Close < s.lowerBand && s.hasPosition {
+		signal = "SELL"
+	}
+	
+	return Signal{
+		Action: signal,
+		Price: bar.Close,
+		StopLoss: bar.Close * (1 - s.StopLossPct),
+		TakeProfit: bar.Close * (1 + s.TakeProfitPct),
+	}
+}
+
+// GetParameters implements BacktestStrategy
+func (s *OptimizableBollinger) GetParameters() map[string]interface{} {
+	return s.GetCurrentParameters()
+}
+
+// Reset implements BacktestStrategy
+func (s *OptimizableBollinger) Reset() {
+	s.prices = []float64{}
+	s.volumes = []float64{}
+	s.upperBand = 0
+	s.lowerBand = 0
+	s.middleBand = 0
+	s.hasPosition = false
+}
+
+// OptimizableMACD wraps MACD strategy
+type OptimizableMACD struct {
+	*strategies.MACDDivergenceStrategy
+	symbol string
+}
+
+// NewOptimizableMACD creates an optimizable MACD strategy
+func NewOptimizableMACD(symbol string) *OptimizableMACD {
+	return &OptimizableMACD{
+		MACDDivergenceStrategy: strategies.NewMACDDivergenceStrategy(symbol),
+		symbol: symbol,
+	}
+}
+
+// SetParameters updates MACD parameters
+func (s *OptimizableMACD) SetParameters(params map[string]interface{}) error {
+	if fast, ok := params["fast_period"].(int); ok {
+		s.FastPeriod = fast
+	}
+	if slow, ok := params["slow_period"].(int); ok {
+		s.SlowPeriod = slow
+	}
+	if signal, ok := params["signal_period"].(int); ok {
+		s.SignalPeriod = signal
+	}
+	if window, ok := params["divergence_window"].(int); ok {
+		s.DivergenceWindow = window
+	}
+	return nil
+}
+
+// GetParameterRanges defines MACD optimization ranges
+func (s *OptimizableMACD) GetParameterRanges() map[string]ParameterRange {
+	return map[string]ParameterRange{
+		"fast_period": {
+			Name: "fast_period",
+			Type: "int",
+			Min:  8,
+			Max:  16,
+			Step: 2,
+			Current: s.FastPeriod,
+		},
+		"slow_period": {
+			Name: "slow_period",
+			Type: "int",
+			Min:  20,
+			Max:  30,
+			Step: 2,
+			Current: s.SlowPeriod,
+		},
+		"signal_period": {
+			Name: "signal_period",
+			Type: "int",
+			Min:  7,
+			Max:  11,
+			Step: 1,
+			Current: s.SignalPeriod,
+		},
+		"divergence_window": {
+			Name: "divergence_window",
+			Type: "int",
+			Min:  10,
+			Max:  20,
+			Step: 2,
+			Current: s.DivergenceWindow,
+		},
+	}
+}
+
+// Clone creates a copy
+func (s *OptimizableMACD) Clone() OptimizableStrategy {
+	clone := NewOptimizableMACD(s.symbol)
+	clone.SetParameters(s.GetCurrentParameters())
+	return clone
+}
+
+// GetCurrentParameters returns current values
+func (s *OptimizableMACD) GetCurrentParameters() map[string]interface{} {
+	return map[string]interface{}{
+		"fast_period": s.FastPeriod,
+		"slow_period": s.SlowPeriod,
+		"signal_period": s.SignalPeriod,
+		"divergence_window": s.DivergenceWindow,
+	}
+}
+
+// ProcessBar implements BacktestStrategy
+func (s *OptimizableMACD) ProcessBar(bar Bar, portfolio *Portfolio) Signal {
+	s.MACDDivergenceStrategy.ProcessBar(bar.Close, bar.Time)
+	
+	signal := "HOLD"
+	
+	// MACD crossover signals
+	if s.macdLine > s.signalLine && s.histogram > 0 && !s.hasPosition {
+		signal = "BUY"
+	} else if s.macdLine < s.signalLine && s.hasPosition {
+		signal = "SELL"
+	}
+	
+	// Divergence signals
+	if s.bullishDivergence && !s.hasPosition {
+		signal = "BUY"
+	} else if s.bearishDivergence && s.hasPosition {
+		signal = "SELL"
+	}
+	
+	return Signal{
+		Action: signal,
+		Price: bar.Close,
+		StopLoss: bar.Close * (1 - s.StopLossPct),
+		TakeProfit: bar.Close * (1 + s.TakeProfitPct),
+	}
+}
+
+// GetParameters implements BacktestStrategy
+func (s *OptimizableMACD) GetParameters() map[string]interface{} {
+	return s.GetCurrentParameters()
+}
+
+// Reset implements BacktestStrategy
+func (s *OptimizableMACD) Reset() {
+	s.prices = []float64{}
+	s.macdHistory = []float64{}
+	s.signalHistory = []float64{}
+	s.macdLine = 0
+	s.signalLine = 0
+	s.histogram = 0
+	s.hasPosition = false
+}
+
+// OptimizableML wraps ML ONNX strategy
+type OptimizableML struct {
+	*strategies.MLPredictiveONNXStrategy
+	symbol string
+}
+
+// NewOptimizableML creates an optimizable ML strategy
+func NewOptimizableML(symbol, modelPath string) *OptimizableML {
+	return &OptimizableML{
+		MLPredictiveONNXStrategy: strategies.NewMLPredictiveONNXStrategy(symbol, modelPath),
+		symbol: symbol,
+	}
+}
+
+// SetParameters updates ML parameters
+func (s *OptimizableML) SetParameters(params map[string]interface{}) error {
+	if seqLen, ok := params["sequence_len"].(int); ok {
+		s.SequenceLen = seqLen
+	}
+	if buyThresh, ok := params["buy_threshold"].(float64); ok {
+		s.BuyThreshold = buyThresh
+	}
+	if sellThresh, ok := params["sell_threshold"].(float64); ok {
+		s.SellThreshold = sellThresh
+	}
+	if stopLoss, ok := params["stop_loss"].(float64); ok {
+		s.StopLossPct = stopLoss
+	}
+	if takeProfit, ok := params["take_profit"].(float64); ok {
+		s.TakeProfitPct = takeProfit
+	}
+	return nil
+}
+
+// GetParameterRanges defines ML optimization ranges
+func (s *OptimizableML) GetParameterRanges() map[string]ParameterRange {
+	return map[string]ParameterRange{
+		"sequence_len": {
+			Name: "sequence_len",
+			Type: "int",
+			Min:  10,
+			Max:  30,
+			Step: 5,
+			Current: s.SequenceLen,
+		},
+		"buy_threshold": {
+			Name: "buy_threshold",
+			Type: "float",
+			Min:  0.55,
+			Max:  0.75,
+			Step: 0.05,
+			Current: s.BuyThreshold,
+		},
+		"sell_threshold": {
+			Name: "sell_threshold",
+			Type: "float",
+			Min:  0.25,
+			Max:  0.45,
+			Step: 0.05,
+			Current: s.SellThreshold,
+		},
+		"stop_loss": {
+			Name: "stop_loss",
+			Type: "float",
+			Min:  0.01,
+			Max:  0.03,
+			Step: 0.005,
+			Current: s.StopLossPct,
+		},
+		"take_profit": {
+			Name: "take_profit",
+			Type: "float",
+			Min:  0.03,
+			Max:  0.07,
+			Step: 0.01,
+			Current: s.TakeProfitPct,
+		},
+	}
+}
+
+// Clone creates a copy
+func (s *OptimizableML) Clone() OptimizableStrategy {
+	clone := NewOptimizableML(s.symbol, s.ModelPath)
+	clone.SetParameters(s.GetCurrentParameters())
+	return clone
+}
+
+// GetCurrentParameters returns current values
+func (s *OptimizableML) GetCurrentParameters() map[string]interface{} {
+	return map[string]interface{}{
+		"sequence_len": s.SequenceLen,
+		"buy_threshold": s.BuyThreshold,
+		"sell_threshold": s.SellThreshold,
+		"stop_loss": s.StopLossPct,
+		"take_profit": s.TakeProfitPct,
+	}
+}
+
+// ProcessBar implements BacktestStrategy
+func (s *OptimizableML) ProcessBar(bar Bar, portfolio *Portfolio) Signal {
+	s.MLPredictiveONNXStrategy.ProcessBar(bar.Close, bar.Time, bar.Volume)
+	
+	// Get prediction from model
+	prediction := s.runPrediction()
+	
+	signal := "HOLD"
+	if prediction > s.BuyThreshold && !s.hasPosition {
+		signal = "BUY"
+	} else if prediction < s.SellThreshold && s.hasPosition {
+		signal = "SELL"
+	}
+	
+	return Signal{
+		Action: signal,
+		Price: bar.Close,
+		StopLoss: bar.Close * (1 - s.StopLossPct),
+		TakeProfit: bar.Close * (1 + s.TakeProfitPct),
+	}
+}
+
+// GetParameters implements BacktestStrategy
+func (s *OptimizableML) GetParameters() map[string]interface{} {
+	return s.GetCurrentParameters()
+}
+
+// Reset implements BacktestStrategy
+func (s *OptimizableML) Reset() {
+	s.priceHistory = []Bar{}
+	s.features = [][]float32{}
+	s.predictions = []float64{}
+	s.hasPosition = false
+}
+
+// OptimizablePairs wraps Pairs Trading strategy
+type OptimizablePairs struct {
+	*strategies.PairsTradingStrategy
+	symbolA string
+	symbolB string
+}
+
+// NewOptimizablePairs creates an optimizable pairs strategy
+func NewOptimizablePairs(symbolA, symbolB string) *OptimizablePairs {
+	return &OptimizablePairs{
+		PairsTradingStrategy: strategies.NewPairsTradingStrategy(symbolA, symbolB),
+		symbolA: symbolA,
+		symbolB: symbolB,
+	}
+}
+
+// SetParameters updates pairs parameters
+func (s *OptimizablePairs) SetParameters(params map[string]interface{}) error {
+	if lookback, ok := params["lookback_days"].(int); ok {
+		s.LookbackDays = lookback
+	}
+	if entryZ, ok := params["entry_zscore"].(float64); ok {
+		s.EntryZScore = entryZ
+	}
+	if exitZ, ok := params["exit_zscore"].(float64); ok {
+		s.ExitZScore = exitZ
+	}
+	if stopZ, ok := params["stop_zscore"].(float64); ok {
+		s.StopZScore = stopZ
+	}
+	if minCorr, ok := params["min_correlation"].(float64); ok {
+		s.MinCorrelation = minCorr
+	}
+	return nil
+}
+
+// GetParameterRanges defines pairs optimization ranges
+func (s *OptimizablePairs) GetParameterRanges() map[string]ParameterRange {
+	return map[string]ParameterRange{
+		"lookback_days": {
+			Name: "lookback_days",
+			Type: "int",
+			Min:  30,
+			Max:  90,
+			Step: 10,
+			Current: s.LookbackDays,
+		},
+		"entry_zscore": {
+			Name: "entry_zscore",
+			Type: "float",
+			Min:  1.5,
+			Max:  3.0,
+			Step: 0.5,
+			Current: s.EntryZScore,
+		},
+		"exit_zscore": {
+			Name: "exit_zscore",
+			Type: "float",
+			Min:  0.0,
+			Max:  1.0,
+			Step: 0.25,
+			Current: s.ExitZScore,
+		},
+		"stop_zscore": {
+			Name: "stop_zscore",
+			Type: "float",
+			Min:  2.5,
+			Max:  4.0,
+			Step: 0.5,
+			Current: s.StopZScore,
+		},
+		"min_correlation": {
+			Name: "min_correlation",
+			Type: "float",
+			Min:  0.60,
+			Max:  0.85,
+			Step: 0.05,
+			Current: s.MinCorrelation,
+		},
+	}
+}
+
+// Clone creates a copy
+func (s *OptimizablePairs) Clone() OptimizableStrategy {
+	clone := NewOptimizablePairs(s.symbolA, s.symbolB)
+	clone.SetParameters(s.GetCurrentParameters())
+	return clone
+}
+
+// GetCurrentParameters returns current values
+func (s *OptimizablePairs) GetCurrentParameters() map[string]interface{} {
+	return map[string]interface{}{
+		"lookback_days": s.LookbackDays,
+		"entry_zscore": s.EntryZScore,
+		"exit_zscore": s.ExitZScore,
+		"stop_zscore": s.StopZScore,
+		"min_correlation": s.MinCorrelation,
+	}
+}
+
+// ProcessBar implements BacktestStrategy (simplified for single symbol backtest)
+func (s *OptimizablePairs) ProcessBar(bar Bar, portfolio *Portfolio) Signal {
+	// For pairs, we need both symbols' data
+	// This is simplified - real implementation would handle both
+	
+	signal := "HOLD"
+	
+	// Check z-score for entry/exit
+	if math.Abs(s.currentZScore) > s.EntryZScore && !s.inPosition {
+		if s.currentZScore > s.EntryZScore {
+			signal = "SHORT" // Short A, Long B
+		} else {
+			signal = "LONG" // Long A, Short B
+		}
+	} else if math.Abs(s.currentZScore) < s.ExitZScore && s.inPosition {
+		signal = "CLOSE"
+	} else if math.Abs(s.currentZScore) > s.StopZScore && s.inPosition {
+		signal = "CLOSE" // Stop loss
+	}
+	
+	return Signal{
+		Action: signal,
+		Price: bar.Close,
+	}
+}
+
+// GetParameters implements BacktestStrategy
+func (s *OptimizablePairs) GetParameters() map[string]interface{} {
+	return s.GetCurrentParameters()
+}
+
+// Reset implements BacktestStrategy
+func (s *OptimizablePairs) Reset() {
+	s.pricesA = []float64{}
+	s.pricesB = []float64{}
+	s.currentZScore = 0
+	s.inPosition = false
+}

@@ -1,0 +1,25 @@
+{
+  "avg_loss": -496.0322769999977,
+  "avg_trade": -83.35498866666434,
+  "avg_win": 741.9995880000024,
+  "calmar_ratio": -0.1401618972249342,
+  "hold_time": "168h0m0s",
+  "largest_loss": -507.4538799999973,
+  "largest_win": 952.639280000003,
+  "max_drawdown": 4.468216163626692,
+  "parameters": {
+    "deviation_pct": 0.02,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1,
+    "vwap_period": 20
+  },
+  "profit_factor": 0.747934784090679,
+  "sharpe_ratio": -1.4303988886712782,
+  "sortino_ratio": -0.616952323763438,
+  "strategy": "vwap",
+  "symbol": "TSLA",
+  "test_date": "2025-08-29T22:14:51+02:00",
+  "total_return": -1.2503248299999394,
+  "total_trades": 15,
+  "win_rate": 33.33333333333333
+}

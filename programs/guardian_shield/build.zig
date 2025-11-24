@@ -1,0 +1,172 @@
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    // WORKAROUND: Target glibc 2.39 to avoid translate-c bugs with glibc 2.42
+    // See: ZIG_BUG_REPORT.md for details
+    const target_query = std.Target.Query{
+        .cpu_arch = .x86_64,
+        .os_tag = .linux,
+        .abi = .gnu,
+        .glibc_version = .{ .major = 2, .minor = 39, .patch = 0 },
+    };
+    const target = b.resolveTargetQuery(target_query);
+
+    const optimize = b.standardOptimizeOption(.{});
+
+    // ============================================================
+    // Core Security Libraries
+    // ============================================================
+
+    // libwarden.so - Filesystem protection via syscall interception
+    const libwarden_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/libwarden/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const libwarden = b.addLibrary(.{
+        .name = "warden",
+        .root_module = libwarden_module,
+        .linkage = .dynamic,
+    });
+    libwarden.linkLibC();
+    // WORKAROUND: Undefine and redefine _FORTIFY_SOURCE to avoid __builtin_va_arg_pack issues
+    // Zig 0.16.0-dev automatically adds -D_FORTIFY_SOURCE=2 for ReleaseSafe builds,
+    // but translate-c doesn't support the GCC builtins used by glibc 2.42+ fortified headers
+    libwarden.root_module.addCMacro("_FORTIFY_SOURCE", "0");
+    b.installArtifact(libwarden);
+
+    // libwarden_fork.so - Fork bomb protection
+    const libwarden_fork_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/libwarden_fork/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const libwarden_fork = b.addLibrary(.{
+        .name = "warden-fork",
+        .root_module = libwarden_fork_module,
+        .linkage = .dynamic,
+    });
+    libwarden_fork.linkLibC();
+    // WORKAROUND: Disable _FORTIFY_SOURCE (same issue as libwarden)
+    libwarden_fork.root_module.addCMacro("_FORTIFY_SOURCE", "0");
+    b.installArtifact(libwarden_fork);
+
+    // ============================================================
+    // Optional Monitoring Tools
+    // ============================================================
+
+    // zig_sentinel - eBPF-based system monitoring
+    const sentinel_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/zig_sentinel/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const sentinel = b.addExecutable(.{
+        .name = "zig_sentinel",
+        .root_module = sentinel_module,
+    });
+    sentinel.linkLibC();
+    sentinel.linkSystemLibrary("bpf");
+    // Add system library and include paths for libbpf
+    sentinel.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    sentinel.addIncludePath(.{ .cwd_relative = "/usr/include" });
+    b.installArtifact(sentinel);
+
+    // test-inquisitor - The Inquisitor LSM BPF test harness
+    const inquisitor_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/zig_sentinel/test-inquisitor.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const inquisitor = b.addExecutable(.{
+        .name = "test-inquisitor",
+        .root_module = inquisitor_module,
+    });
+    inquisitor.linkLibC();
+    inquisitor.linkSystemLibrary("bpf");
+    inquisitor.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    inquisitor.addIncludePath(.{ .cwd_relative = "/usr/include" });
+    b.installArtifact(inquisitor);
+
+    // test-oracle-advanced - The All-Seeing Eye test harness
+    const oracle_advanced_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/zig_sentinel/test-oracle-advanced.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const oracle_advanced = b.addExecutable(.{
+        .name = "test-oracle-advanced",
+        .root_module = oracle_advanced_module,
+    });
+    oracle_advanced.linkLibC();
+    oracle_advanced.linkSystemLibrary("bpf");
+    oracle_advanced.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    oracle_advanced.addIncludePath(.{ .cwd_relative = "/usr/include" });
+    b.installArtifact(oracle_advanced);
+
+    // hardware-detector - Detect system capabilities for adaptive pattern loading
+    const hardware_detector_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/zig_sentinel/hardware_detector.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const hardware_detector_exe = b.addExecutable(.{
+        .name = "hardware-detector",
+        .root_module = hardware_detector_module,
+    });
+    hardware_detector_exe.linkLibC();
+    b.installArtifact(hardware_detector_exe);
+
+    // adaptive-pattern-loader - Load patterns based on hardware capabilities
+    const adaptive_loader_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/zig_sentinel/adaptive_pattern_loader.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const adaptive_loader_exe = b.addExecutable(.{
+        .name = "adaptive-pattern-loader",
+        .root_module = adaptive_loader_module,
+    });
+    adaptive_loader_exe.linkLibC();
+    b.installArtifact(adaptive_loader_exe);
+
+    // ============================================================
+    // Tests
+    // ============================================================
+
+    const lib_tests_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/libwarden/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const lib_tests = b.addTest(.{
+        .root_module = lib_tests_module,
+    });
+    const run_lib_tests = b.addRunArtifact(lib_tests);
+
+    const fork_tests_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/libwarden_fork/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const fork_tests = b.addTest(.{
+        .root_module = fork_tests_module,
+    });
+    const run_fork_tests = b.addRunArtifact(fork_tests);
+
+    // Grimoire tests
+    const grimoire_tests_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/zig_sentinel/grimoire.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const grimoire_tests = b.addTest(.{
+        .root_module = grimoire_tests_module,
+    });
+    const run_grimoire_tests = b.addRunArtifact(grimoire_tests);
+
+    const test_step = b.step("test", "Run all tests");
+    test_step.dependOn(&run_lib_tests.step);
+    test_step.dependOn(&run_fork_tests.step);
+    test_step.dependOn(&run_grimoire_tests.step);
+}

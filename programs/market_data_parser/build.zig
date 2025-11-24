@@ -1,0 +1,65 @@
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    // Parser library module (used by benchmarks, examples, tests)
+    const parser_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Benchmark executable
+    const bench_module = b.createModule(.{
+        .root_source_file = b.path("src/benchmarks/main_bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    bench_module.addImport("parser", parser_module);
+
+    const bench = b.addExecutable(.{
+        .name = "bench-parser",
+        .root_module = bench_module,
+    });
+
+    b.installArtifact(bench);
+
+    const bench_cmd = b.addRunArtifact(bench);
+    const bench_step = b.step("bench", "Run parser benchmarks");
+    bench_step.dependOn(&bench_cmd.step);
+
+    // Example: Parse Binance stream
+    const example_module = b.createModule(.{
+        .root_source_file = b.path("examples/binance_parser.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    example_module.addImport("parser", parser_module);
+
+    const example_binance = b.addExecutable(.{
+        .name = "example-binance",
+        .root_module = example_module,
+    });
+
+    b.installArtifact(example_binance);
+
+    const run_example = b.addRunArtifact(example_binance);
+    const example_step = b.step("example", "Run Binance parser example");
+    example_step.dependOn(&run_example.step);
+
+    // Tests
+    const test_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const tests = b.addTest(.{
+        .root_module = test_module,
+    });
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+}

@@ -1,0 +1,25 @@
+{
+  "avg_loss": -503.3793199999982,
+  "avg_trade": -86.47345666666449,
+  "avg_win": 330.43240666666924,
+  "calmar_ratio": -0.28686187514315115,
+  "hold_time": "507h50m0s",
+  "largest_loss": -507.248349999998,
+  "largest_win": 531.1458800000037,
+  "max_drawdown": 0.9042779066781282,
+  "parameters": {
+    "deviation_pct": 0.02,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1,
+    "vwap_period": 20
+  },
+  "profit_factor": 0.6564282510983376,
+  "sharpe_ratio": -3.3370101624958193,
+  "sortino_ratio": -1.2897454391302634,
+  "strategy": "vwap",
+  "symbol": "SPY",
+  "test_date": "2025-08-29T22:14:50+02:00",
+  "total_return": -0.5188407399999705,
+  "total_trades": 6,
+  "win_rate": 50
+}

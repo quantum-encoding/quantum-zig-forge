@@ -1,0 +1,25 @@
+{
+  "avg_loss": -510.6726174999985,
+  "avg_trade": 126.42385416666927,
+  "avg_win": 444.97209000000316,
+  "calmar_ratio": 0.7190684428125435,
+  "hold_time": "380h10m0s",
+  "largest_loss": -512.7048399999985,
+  "largest_win": 981.2780000000039,
+  "max_drawdown": 1.0494830481078494,
+  "parameters": {
+    "deviation_pct": 0.02,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1,
+    "vwap_period": 20
+  },
+  "profit_factor": 1.7426902275605347,
+  "sharpe_ratio": -0.9877002787568864,
+  "sortino_ratio": -0.5941072210958186,
+  "strategy": "vwap",
+  "symbol": "AAPL",
+  "test_date": "2025-08-29T22:14:50+02:00",
+  "total_return": 1.5170862500000513,
+  "total_trades": 12,
+  "win_rate": 66.66666666666666
+}

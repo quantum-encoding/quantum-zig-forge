@@ -1,0 +1,25 @@
+{
+  "avg_loss": -506.5103799999979,
+  "avg_trade": 141.72918714285984,
+  "avg_win": 627.9088625000031,
+  "calmar_ratio": 0.4807892144168462,
+  "hold_time": "610h17m8.571428571s",
+  "largest_loss": -512.7400299999972,
+  "largest_win": 880.2945200000031,
+  "max_drawdown": 1.0277878083508765,
+  "parameters": {
+    "num_std_dev": 2,
+    "period": 20,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1
+  },
+  "profit_factor": 1.652901598318033,
+  "sharpe_ratio": -1.350983914021917,
+  "sortino_ratio": -0.6309389025586692,
+  "strategy": "bb",
+  "symbol": "MSFT",
+  "test_date": "2025-08-29T22:14:48+02:00",
+  "total_return": 0.9921043100000387,
+  "total_trades": 7,
+  "win_rate": 57.14285714285714
+}

@@ -1,0 +1,25 @@
+{
+  "avg_loss": -516.9033299999974,
+  "avg_trade": 364.3448554545486,
+  "avg_win": 694.8129250000034,
+  "calmar_ratio": 1.5617641769190331,
+  "hold_time": "261h54m32.727272727s",
+  "largest_loss": -517.1749899999977,
+  "largest_win": 1004.0935400000035,
+  "max_drawdown": 1.2687383714022902,
+  "parameters": {
+    "deviation_pct": 0.02,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.1,
+    "vwap_period": 20
+  },
+  "profit_factor": 3.584489321565572,
+  "sharpe_ratio": -0.013246493276172923,
+  "sortino_ratio": -0.006466674608551456,
+  "strategy": "vwap",
+  "symbol": "GOOGL",
+  "test_date": "2025-08-29T22:14:50+02:00",
+  "total_return": 4.0077934100000565,
+  "total_trades": 11,
+  "win_rate": 72.72727272727273
+}

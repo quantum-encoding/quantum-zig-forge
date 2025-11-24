@@ -1,0 +1,313 @@
+package backtesting
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/alpacahq/alpaca-trade-api-go/v3/marketdata"
+)
+
+// OptimizationConfig holds configuration for batch optimization
+type OptimizationConfig struct {
+	Symbol          string                 `json:"symbol"`
+	Strategy        string                 `json:"strategy"`
+	StartDate       string                 `json:"start_date"`
+	EndDate         string                 `json:"end_date"`
+	Mode            string                 `json:"mode"`           // grid, random, genetic, bayesian
+	ObjectiveFunc   string                 `json:"objective_func"`  // sharpe, profit_factor, calmar
+	WalkForward     bool                   `json:"walk_forward"`
+	TrainMonths     int                    `json:"train_months"`
+	TestMonths      int                    `json:"test_months"`
+	CustomParams    map[string]interface{} `json:"custom_params"`
+}
+
+// RunOptimizationCLI is the main entry point for the optimization CLI
+func RunOptimizationCLI() {
+	// Command line flags
+	var (
+		configFile  = flag.String("config", "", "Configuration file for batch optimization")
+		strategy    = flag.String("strategy", "rsi", "Strategy to optimize: rsi, ma, bb, macd, ml, pairs, all")
+		symbol      = flag.String("symbol", "SPY", "Trading symbol")
+		startDate   = flag.String("start", "2022-01-01", "Start date (YYYY-MM-DD)")
+		endDate     = flag.String("end", "2024-01-01", "End date (YYYY-MM-DD)")
+		mode        = flag.String("mode", "bayesian", "Optimization mode: grid, random, genetic, bayesian")
+		objective   = flag.String("objective", "sharpe", "Objective function: sharpe, profit_factor, calmar, custom")
+		walkForward = flag.Bool("walk", true, "Use walk-forward validation")
+		outputDir   = flag.String("output", "optimized_params", "Output directory for results")
+		apiKey      = flag.String("api-key", "", "Alpaca API key")
+		apiSecret   = flag.String("api-secret", "", "Alpaca API secret")
+	)
+	flag.Parse()
+
+	// Setup logging
+	logFile, err := os.OpenFile("optimization.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatal("Failed to open log file:", err)
+	}
+	defer logFile.Close()
+	log.SetOutput(logFile)
+
+	// Create output directory
+	if err := os.MkdirAll(*outputDir, 0755); err != nil {
+		log.Fatal("Failed to create output directory:", err)
+	}
+
+	// Get API credentials
+	if *apiKey == "" {
+		*apiKey = os.Getenv("APCA_API_KEY_ID")
+	}
+	if *apiSecret == "" {
+		*apiSecret = os.Getenv("APCA_API_SECRET_KEY")
+	}
+	
+	if *apiKey == "" || *apiSecret == "" {
+		log.Fatal("API credentials required")
+	}
+
+	// Initialize market data client
+	dataClient := marketdata.NewClient(marketdata.ClientOpts{
+		APIKey:    *apiKey,
+		APISecret: *apiSecret,
+	})
+
+	// Run optimization based on mode
+	if *configFile != "" {
+		runBatchOptimization(*configFile, dataClient, *outputDir)
+	} else {
+		runSingleOptimization(*strategy, *symbol, *startDate, *endDate, 
+			*mode, *objective, *walkForward, dataClient, *outputDir)
+	}
+}
+
+// runSingleOptimization runs optimization for a single strategy
+func runSingleOptimization(strategyName, symbol, startStr, endStr, mode, objective string,
+	walkForward bool, dataClient *marketdata.Client, outputDir string) {
+	
+	// Parse dates
+	start, err := time.Parse("2006-01-02", startStr)
+	if err != nil {
+		log.Fatal("Invalid start date:", err)
+	}
+	end, err := time.Parse("2006-01-02", endStr)
+	if err != nil {
+		log.Fatal("Invalid end date:", err)
+	}
+
+	// Create strategy
+	var strategy OptimizableStrategy
+	
+	switch strategyName {
+	case "rsi":
+		strategy = NewOptimizableRSI(symbol)
+		log.Printf("Optimizing RSI strategy for %s", symbol)
+		
+	case "ma":
+		strategy = NewOptimizableMA(symbol)
+		log.Printf("Optimizing Moving Average strategy for %s", symbol)
+		
+	case "bb":
+		strategy = NewOptimizableBollinger(symbol)
+		log.Printf("Optimizing Bollinger Bands strategy for %s", symbol)
+		
+	case "macd":
+		strategy = NewOptimizableMACD(symbol)
+		log.Printf("Optimizing MACD strategy for %s", symbol)
+		
+	case "ml":
+		modelPath := filepath.Join("models", "trading_lstm.onnx")
+		if _, err := os.Stat(modelPath); os.IsNotExist(err) {
+			log.Printf("ONNX model not found at %s, skipping ML optimization", modelPath)
+			return
+		}
+		strategy = NewOptimizableML(symbol, modelPath)
+		log.Printf("Optimizing ML ONNX strategy for %s", symbol)
+		
+	case "pairs":
+		// For pairs, symbol should be like "KO,PEP"
+		// Split and create pairs strategy
+		log.Printf("Pairs trading optimization not yet implemented")
+		return
+		
+	case "all":
+		// Run all strategies sequentially
+		strategies := []string{"rsi", "ma", "bb", "macd"}
+		for _, s := range strategies {
+			runSingleOptimization(s, symbol, startStr, endStr, mode, objective, 
+				walkForward, dataClient, outputDir)
+		}
+		return
+		
+	default:
+		log.Fatal("Unknown strategy:", strategyName)
+	}
+
+	// Create optimizer
+	optimizer := NewOptimizer(strategy, symbol, start, end)
+	optimizer.OptimizationMode = mode
+	optimizer.ObjectiveFunc = objective
+	optimizer.UseWalkForward = walkForward
+	optimizer.Verbose = true
+
+	// Load historical data
+	log.Printf("Loading historical data for %s from %s to %s", symbol, startStr, endStr)
+	if err := optimizer.LoadData(dataClient); err != nil {
+		log.Fatal("Failed to load data:", err)
+	}
+
+	// Run optimization
+	log.Printf("Starting %s optimization with objective: %s", mode, objective)
+	result, err := optimizer.Optimize()
+	if err != nil {
+		log.Fatal("Optimization failed:", err)
+	}
+
+	// Save results
+	outputFile := filepath.Join(outputDir, fmt.Sprintf("%s_%s.json", strategyName, symbol))
+	if err := saveOptimizationResult(result, outputFile); err != nil {
+		log.Fatal("Failed to save results:", err)
+	}
+
+	// Print summary
+	optimizer.PrintSummary()
+	
+	// Log results
+	log.Printf("Optimization complete for %s/%s", strategyName, symbol)
+	log.Printf("Best parameters saved to %s", outputFile)
+	log.Printf("Best score: %.4f", result.Score)
+	
+	if result.Metrics != nil {
+		log.Printf("Performance: Return=%.2f%%, Sharpe=%.2f, MaxDD=%.2f%%",
+			result.Metrics.TotalReturn, result.Metrics.SharpeRatio, result.Metrics.MaxDrawdownPct)
+	}
+	
+	if walkForward && result.OverfitRatio > 0 {
+		log.Printf("Overfit ratio: %.2f", result.OverfitRatio)
+		if result.OverfitRatio < 0.8 {
+			log.Printf("WARNING: Potential overfitting detected!")
+		}
+	}
+}
+
+// runBatchOptimization runs optimization from config file
+func runBatchOptimization(configFile string, dataClient *marketdata.Client, outputDir string) {
+	// Read config file
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		log.Fatal("Failed to read config file:", err)
+	}
+
+	var configs []OptimizationConfig
+	if err := json.Unmarshal(data, &configs); err != nil {
+		log.Fatal("Failed to parse config file:", err)
+	}
+
+	log.Printf("Running batch optimization for %d configurations", len(configs))
+
+	// Process each configuration
+	for i, config := range configs {
+		log.Printf("Processing configuration %d/%d: %s/%s", 
+			i+1, len(configs), config.Strategy, config.Symbol)
+		
+		runSingleOptimization(
+			config.Strategy,
+			config.Symbol,
+			config.StartDate,
+			config.EndDate,
+			config.Mode,
+			config.ObjectiveFunc,
+			config.WalkForward,
+			dataClient,
+			outputDir,
+		)
+		
+		// Pause between optimizations to avoid rate limits
+		time.Sleep(2 * time.Second)
+	}
+	
+	log.Printf("Batch optimization complete")
+}
+
+// saveOptimizationResult saves optimization result to JSON file
+func saveOptimizationResult(result *OptimizationResult, filename string) error {
+	// Create output structure
+	output := map[string]interface{}{
+		"parameters": result.Parameters,
+		"score":      result.Score,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	}
+	
+	if result.Metrics != nil {
+		output["metrics"] = map[string]interface{}{
+			"total_return":     result.Metrics.TotalReturn,
+			"sharpe_ratio":     result.Metrics.SharpeRatio,
+			"sortino_ratio":    result.Metrics.SortinoRatio,
+			"profit_factor":    result.Metrics.ProfitFactor,
+			"calmar_ratio":     result.Metrics.CalmarRatio,
+			"win_rate":         result.Metrics.WinRate,
+			"max_drawdown_pct": result.Metrics.MaxDrawdownPct,
+			"total_trades":     result.Metrics.TotalTrades,
+		}
+	}
+	
+	if result.OverfitRatio > 0 {
+		output["validation"] = map[string]interface{}{
+			"in_sample_score":    result.InSampleScore,
+			"out_of_sample_score": result.OutOfSampleScore,
+			"overfit_ratio":      result.OverfitRatio,
+			"robust":             result.OverfitRatio >= 0.8,
+		}
+	}
+
+	// Write to file
+	data, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return err
+	}
+	
+	return ioutil.WriteFile(filename, data, 0644)
+}
+
+// Example batch configuration file (save as optimization_batch.json):
+/*
+[
+  {
+    "symbol": "SPY",
+    "strategy": "rsi",
+    "start_date": "2022-01-01",
+    "end_date": "2024-01-01",
+    "mode": "bayesian",
+    "objective_func": "sharpe",
+    "walk_forward": true,
+    "train_months": 12,
+    "test_months": 3
+  },
+  {
+    "symbol": "BTCUSD",
+    "strategy": "ma",
+    "start_date": "2022-01-01",
+    "end_date": "2024-01-01",
+    "mode": "genetic",
+    "objective_func": "profit_factor",
+    "walk_forward": true,
+    "train_months": 6,
+    "test_months": 1
+  },
+  {
+    "symbol": "AAPL",
+    "strategy": "bb",
+    "start_date": "2022-01-01",
+    "end_date": "2024-01-01",
+    "mode": "bayesian",
+    "objective_func": "calmar",
+    "walk_forward": true,
+    "train_months": 12,
+    "test_months": 3
+  }
+]
+*/
