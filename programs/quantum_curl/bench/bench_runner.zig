@@ -201,10 +201,9 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     defer requests_jsonl.deinit(allocator);
 
     for (0..config.request_count) |req_id| {
-        try requests_jsonl.writer(allocator).print(
-            "{{\"id\":\"req-{d}\",\"method\":\"GET\",\"url\":\"{s}\"}}\n",
-            .{ req_id, config.target_url },
-        );
+        var buf: [256]u8 = undefined;
+        const line = try std.fmt.bufPrint(&buf, "{{\"id\":\"req-{d}\",\"method\":\"GET\",\"url\":\"{s}\"}}\n", .{ req_id, config.target_url });
+        try requests_jsonl.appendSlice(allocator, line);
     }
 
     // Write to temp file
