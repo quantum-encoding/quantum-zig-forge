@@ -213,7 +213,7 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     try temp_file.writeAll(requests_jsonl.items);
 
     // Run quantum-curl and capture output
-    const start_time = std.time.milliTimestamp();
+    const start_instant = std.time.Instant.now() catch unreachable;
 
     const concurrency_str = try std.fmt.allocPrint(allocator, "{d}", .{config.concurrency});
     defer allocator.free(concurrency_str);
