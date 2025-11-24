@@ -241,6 +241,8 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     _ = try child.wait();
 
     const end_instant = std.time.Instant.now() catch unreachable;
+    const elapsed_ns = end_instant.since(start_instant);
+    const total_time_ms = elapsed_ns / std.time.ns_per_ms;
 
     // Now read all output from the pipe (child has finished writing)
     var buf: [10 * 1024 * 1024]u8 = undefined; // 10MB buffer
@@ -253,10 +255,6 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
         }
     }
     const output = buf[0..total_read];
-
-    const end_instant = std.time.Instant.now() catch unreachable;
-    const elapsed_ns = end_instant.since(start_instant);
-    const total_time_ms = elapsed_ns / std.time.ns_per_ms;
 
     // Parse results and collect latencies
     var latencies = std.ArrayList(u64){};
