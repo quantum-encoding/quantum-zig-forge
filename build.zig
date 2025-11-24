@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
     const build_all = b.step("all", "Build all programs in the monorepo");
 
     // Programs
+    buildProgram(b, "zig_ai", target, optimize, build_all);
     buildProgram(b, "http_sentinel", target, optimize, build_all);
     buildProgram(b, "quantum_curl", target, optimize, build_all);
     buildProgram(b, "guardian_shield", target, optimize, build_all);
