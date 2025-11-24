@@ -35,6 +35,7 @@ pub fn build(b: *std.Build) void {
     // Test all programs
     const test_all = b.step("test", "Run all tests in the monorepo");
     testProgram(b, "http_sentinel", test_all);
+    testProgram(b, "quantum_curl", test_all);
     testProgram(b, "guardian_shield", test_all);
     testProgram(b, "chronos_engine", test_all);
     testProgram(b, "zig_jail", test_all);

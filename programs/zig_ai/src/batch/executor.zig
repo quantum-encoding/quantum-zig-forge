@@ -9,12 +9,14 @@
 const std = @import("std");
 const types = @import("types.zig");
 const cli = @import("../cli.zig");
-const ai_common = @import("../ai/common.zig");
-const anthropic = @import("../ai/anthropic.zig");
-const deepseek = @import("../ai/deepseek.zig");
-const gemini = @import("../ai/gemini.zig");
-const grok = @import("../ai/grok.zig");
-const vertex = @import("../ai/vertex.zig");
+const http_sentinel = @import("http-sentinel");
+const ai = http_sentinel.ai;
+const ai_common = ai.common;
+const anthropic = ai.anthropic;
+const deepseek = ai.deepseek;
+const gemini = ai.gemini;
+const grok = ai.grok;
+const vertex = ai.vertex;
 
 /// Thread-safe batch executor using fixed-size thread pool
 pub const BatchExecutor = struct {
