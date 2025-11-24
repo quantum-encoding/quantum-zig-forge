@@ -1,0 +1,80 @@
+{
+  "benchmarks": [
+{
+  "name": "warmup",
+  "total_requests": 100,
+  "successful_requests": 100,
+  "failed_requests": 0,
+  "total_time_ms": 11,
+  "latency": {
+    "min_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0.00,
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0
+  },
+  "throughput": {
+    "requests_per_second": 9090.91
+  }
+},
+{
+  "name": "light_load",
+  "total_requests": 500,
+  "successful_requests": 4,
+  "failed_requests": 0,
+  "total_time_ms": 10,
+  "latency": {
+    "min_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0.00,
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0
+  },
+  "throughput": {
+    "requests_per_second": 400.00
+  }
+},
+{
+  "name": "medium_load",
+  "total_requests": 1000,
+  "successful_requests": 11,
+  "failed_requests": 0,
+  "total_time_ms": 17,
+  "latency": {
+    "min_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0.00,
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0
+  },
+  "throughput": {
+    "requests_per_second": 647.06
+  }
+},
+{
+  "name": "heavy_load",
+  "total_requests": 2000,
+  "successful_requests": 5,
+  "failed_requests": 0,
+  "total_time_ms": 32,
+  "latency": {
+    "min_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0.00,
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0
+  },
+  "throughput": {
+    "requests_per_second": 156.25
+  }
+}
+  ],
+  "summary": {
+    "avg_requests_per_second": 401.10,
+    "avg_p99_latency_ms": 0
+  }
+}
