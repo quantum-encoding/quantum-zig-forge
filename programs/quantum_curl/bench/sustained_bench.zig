@@ -246,10 +246,6 @@ fn makeDirectRequest(url: []const u8) bool {
     const sockfd = posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0) catch return false;
     defer posix.close(sockfd);
 
-    // Set receive timeout to prevent hanging forever (100ms)
-    const timeout = posix.timeval{ .sec = 0, .usec = 100000 };
-    posix.setsockopt(sockfd, posix.SOL.SOCKET, posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
-
     const addr = posix.sockaddr.in{
         .family = posix.AF.INET,
         .port = std.mem.nativeToBig(u16, 8888),
@@ -259,14 +255,13 @@ fn makeDirectRequest(url: []const u8) bool {
     posix.connect(sockfd, @ptrCast(&addr), @sizeOf(@TypeOf(addr))) catch return false;
 
     // Send minimal HTTP request
-    const request = "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    const request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
     _ = posix.write(sockfd, request) catch return false;
 
-    // Read response (blocking with timeout)
+    // Read response (blocking)
     var buf: [256]u8 = undefined;
     const n = posix.read(sockfd, &buf) catch return false;
 
-    // Success if we got any response data
     return n > 0;
 }
 
