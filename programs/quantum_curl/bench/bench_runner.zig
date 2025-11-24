@@ -106,23 +106,23 @@ pub fn main() !void {
         .{ .name = "stress_test", .request_count = 5000, .concurrency = 200, .target_url = target_url },
     };
 
-    var results = std.ArrayList(BenchmarkResult).init(allocator);
-    defer results.deinit();
+    var results = std.ArrayList(BenchmarkResult){};
+    defer results.deinit(allocator);
 
     if (!output_json) {
         std.debug.print("\n", .{});
-        std.debug.print("╔══════════════════════════════════════════════════════════════════╗\n", .{});
-        std.debug.print("║           QUANTUM CURL PERFORMANCE BENCHMARK SUITE               ║\n", .{});
-        std.debug.print("╠══════════════════════════════════════════════════════════════════╣\n", .{});
-        std.debug.print("║  Target: {s:<54} ║\n", .{target_url});
-        std.debug.print("╚══════════════════════════════════════════════════════════════════╝\n", .{});
+        std.debug.print("====================================================================\n", .{});
+        std.debug.print("           QUANTUM CURL PERFORMANCE BENCHMARK SUITE                \n", .{});
+        std.debug.print("====================================================================\n", .{});
+        std.debug.print("  Target: {s}\n", .{target_url});
+        std.debug.print("====================================================================\n", .{});
         std.debug.print("\n", .{});
     }
 
     // Run benchmarks
     for (benchmarks) |config| {
         const result = try runBenchmark(allocator, config);
-        try results.append(result);
+        try results.append(allocator, result);
 
         if (!output_json) {
             printResult(&result);
@@ -164,9 +164,9 @@ pub fn main() !void {
     } else {
         // Print summary
         std.debug.print("\n", .{});
-        std.debug.print("╔══════════════════════════════════════════════════════════════════╗\n", .{});
-        std.debug.print("║                         SUMMARY                                  ║\n", .{});
-        std.debug.print("╠══════════════════════════════════════════════════════════════════╣\n", .{});
+        std.debug.print("====================================================================\n", .{});
+        std.debug.print("                         SUMMARY                                   \n", .{});
+        std.debug.print("====================================================================\n", .{});
 
         var total_rps: f64 = 0;
         var max_rps: f64 = 0;
@@ -178,30 +178,30 @@ pub fn main() !void {
             if (result.p99_latency_ms < min_p99) min_p99 = result.p99_latency_ms;
         }
 
-        std.debug.print("║  Peak Throughput:    {d:>10.0} req/sec                          ║\n", .{max_rps});
-        std.debug.print("║  Best P99 Latency:   {d:>10} ms                                ║\n", .{min_p99});
-        std.debug.print("╚══════════════════════════════════════════════════════════════════╝\n", .{});
+        std.debug.print("  Peak Throughput:    {d:.0} req/sec\n", .{max_rps});
+        std.debug.print("  Best P99 Latency:   {d} ms\n", .{min_p99});
+        std.debug.print("====================================================================\n", .{});
     }
 
     // Check for regression if baseline provided
     if (baseline_file) |baseline| {
         const regression = try checkRegression(allocator, baseline, &results, regression_threshold);
         if (regression) {
-            std.debug.print("\n⚠️  REGRESSION DETECTED! Performance degraded by more than {d:.0}%\n", .{regression_threshold});
+            std.debug.print("\nWARNING: REGRESSION DETECTED! Performance degraded by more than {d:.0}%\n", .{regression_threshold});
             std.process.exit(1);
         } else {
-            std.debug.print("\n✓ No regression detected (threshold: {d:.0}%)\n", .{regression_threshold});
+            std.debug.print("\nNo regression detected (threshold: {d:.0}%)\n", .{regression_threshold});
         }
     }
 }
 
 fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !BenchmarkResult {
     // Generate JSONL requests
-    var requests_jsonl = std.ArrayList(u8).init(allocator);
-    defer requests_jsonl.deinit();
+    var requests_jsonl = std.ArrayList(u8){};
+    defer requests_jsonl.deinit(allocator);
 
     for (0..config.request_count) |req_id| {
-        try requests_jsonl.writer().print(
+        try requests_jsonl.writer(allocator).print(
             "{{\"id\":\"req-{d}\",\"method\":\"GET\",\"url\":\"{s}\"}}\n",
             .{ req_id, config.target_url },
         );
@@ -216,13 +216,16 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     // Run quantum-curl and capture output
     const start_time = std.time.milliTimestamp();
 
+    const concurrency_str = try std.fmt.allocPrint(allocator, "{d}", .{config.concurrency});
+    defer allocator.free(concurrency_str);
+
     var child = std.process.Child.init(
         &[_][]const u8{
             "/home/founder/github_public/quantum-zig-forge/programs/quantum_curl/zig-out/bin/quantum-curl",
             "--file",
             temp_path,
             "--concurrency",
-            try std.fmt.allocPrint(allocator, "{d}", .{config.concurrency}),
+            concurrency_str,
         },
         allocator,
     );
@@ -232,11 +235,11 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     try child.spawn();
 
     // Read output
-    var output = std.ArrayList(u8).init(allocator);
-    defer output.deinit();
+    var output = std.ArrayList(u8){};
+    defer output.deinit(allocator);
 
     const stdout = child.stdout.?;
-    try stdout.reader().readAllArrayList(&output, 100 * 1024 * 1024); // 100MB max
+    try stdout.reader().readAllArrayList(&output, allocator, 100 * 1024 * 1024); // 100MB max
 
     _ = try child.wait();
 
@@ -244,8 +247,8 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     const total_time_ms = @as(u64, @intCast(end_time - start_time));
 
     // Parse results and collect latencies
-    var latencies = std.ArrayList(u64).init(allocator);
-    defer latencies.deinit();
+    var latencies = std.ArrayList(u64){};
+    defer latencies.deinit(allocator);
 
     var successful: u32 = 0;
     var failed: u32 = 0;
@@ -272,7 +275,7 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
             failed += 1;
         }
 
-        try latencies.append(latency);
+        try latencies.append(allocator, latency);
     }
 
     // Calculate statistics
@@ -328,27 +331,26 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
 }
 
 fn printResult(result: *const BenchmarkResult) void {
-    std.debug.print("┌──────────────────────────────────────────────────────────────────┐\n", .{});
-    std.debug.print("│ {s:<64} │\n", .{result.name});
-    std.debug.print("├──────────────────────────────────────────────────────────────────┤\n", .{});
-    std.debug.print("│ Requests:    {d:>6} total | {d:>6} ok | {d:>6} failed             │\n", .{
+    std.debug.print("--------------------------------------------------------------------\n", .{});
+    std.debug.print(" {s}\n", .{result.name});
+    std.debug.print("--------------------------------------------------------------------\n", .{});
+    std.debug.print(" Requests:    {d} total | {d} ok | {d} failed\n", .{
         result.total_requests,
         result.successful_requests,
         result.failed_requests,
     });
-    std.debug.print("│ Throughput:  {d:>10.0} req/sec                                   │\n", .{result.requests_per_second});
-    std.debug.print("│ Latency:     min={d:>4}ms | avg={d:>6.1}ms | max={d:>5}ms            │\n", .{
+    std.debug.print(" Throughput:  {d:.0} req/sec\n", .{result.requests_per_second});
+    std.debug.print(" Latency:     min={d}ms | avg={d:.1}ms | max={d}ms\n", .{
         result.min_latency_ms,
         result.avg_latency_ms,
         result.max_latency_ms,
     });
-    std.debug.print("│ Percentiles: p50={d:>4}ms | p95={d:>5}ms | p99={d:>5}ms             │\n", .{
+    std.debug.print(" Percentiles: p50={d}ms | p95={d}ms | p99={d}ms\n", .{
         result.p50_latency_ms,
         result.p95_latency_ms,
         result.p99_latency_ms,
     });
-    std.debug.print("│ Duration:    {d:>6}ms                                             │\n", .{result.total_time_ms});
-    std.debug.print("└──────────────────────────────────────────────────────────────────┘\n", .{});
+    std.debug.print(" Duration:    {d}ms\n", .{result.total_time_ms});
     std.debug.print("\n", .{});
 }
 
