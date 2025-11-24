@@ -210,8 +210,14 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
         try requests_jsonl.appendSlice(allocator, line);
     }
 
-    // Write to temp file
-    const temp_path = "/tmp/quantum_curl_bench_requests.jsonl";
+    // Use unique temp files per benchmark to avoid race conditions
+    var temp_path_buf: [128]u8 = undefined;
+    const temp_path = try std.fmt.bufPrint(&temp_path_buf, "/tmp/qc_bench_{s}_req.jsonl", .{config.name});
+
+    var output_path_buf: [128]u8 = undefined;
+    const output_path = try std.fmt.bufPrint(&output_path_buf, "/tmp/qc_bench_{s}_out.jsonl", .{config.name});
+
+    // Write requests to temp file
     const temp_file = try std.fs.cwd().createFile(temp_path, .{});
     defer temp_file.close();
     try temp_file.writeAll(requests_jsonl.items);
@@ -221,9 +227,6 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
 
     const concurrency_str = try std.fmt.allocPrint(allocator, "{d}", .{config.concurrency});
     defer allocator.free(concurrency_str);
-
-    // Output file for quantum-curl results (use shell to redirect)
-    const output_path = "/tmp/quantum_curl_bench_output.jsonl";
 
     // Use shell to redirect stdout to file (avoids pipe buffer limits)
     const shell_cmd = try std.fmt.allocPrint(
