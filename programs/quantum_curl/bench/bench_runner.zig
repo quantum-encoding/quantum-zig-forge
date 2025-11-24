@@ -257,7 +257,7 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     var successful: u32 = 0;
     var failed: u32 = 0;
 
-    var line_iter = std.mem.splitScalar(u8, output.items, '\n');
+    var line_iter = std.mem.splitScalar(u8, output, '\n');
     while (line_iter.next()) |line| {
         if (line.len == 0) continue;
 
