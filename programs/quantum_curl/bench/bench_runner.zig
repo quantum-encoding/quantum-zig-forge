@@ -131,7 +131,8 @@ pub fn main() !void {
 
     // Output JSON if requested
     if (output_json) {
-        const stdout = std.io.getStdOut().writer();
+        const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+        const stdout = stdout_file.writer();
         try stdout.writeAll("{\n  \"benchmarks\": [\n");
         for (results.items, 0..) |result, idx| {
             try result.toJson(stdout);
