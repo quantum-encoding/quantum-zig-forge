@@ -1,12 +1,10 @@
 // Copyright (c) 2025 QUANTUM ENCODING LTD
-// Ultra-High-Performance HTTP Echo Server for Benchmarking
+// High-Performance HTTP Echo Server for Benchmarking
 //
-// Single-threaded non-blocking server using epoll for maximum throughput.
-// Optimized for raw connection handling speed.
+// Thread-per-connection model optimized for throughput.
 
 const std = @import("std");
 const posix = std.posix;
-const linux = std.os.linux;
 
 // Pre-built HTTP response - minimal overhead
 const RESPONSE =
@@ -17,8 +15,34 @@ const RESPONSE =
     "\r\n" ++
     "{\"status\":\"ok\",\"id\":1}";
 
-var request_count: u64 = 0;
+var request_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0);
 var start_instant: std.time.Instant = undefined;
+
+fn handleClient(client_fd: posix.socket_t) void {
+    defer posix.close(client_fd);
+
+    // Read request (drain it)
+    var buf: [1024]u8 = undefined;
+    _ = posix.read(client_fd, &buf) catch return;
+
+    // Send response
+    _ = posix.write(client_fd, RESPONSE) catch return;
+
+    // Increment counter atomically
+    const count = request_count.fetchAdd(1, .monotonic) + 1;
+
+    // Print stats every 10000 requests
+    if (count % 10000 == 0) {
+        const now = std.time.Instant.now() catch return;
+        const elapsed_ns = now.since(start_instant);
+        const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
+        const rps = if (elapsed_ms > 0)
+            @as(f64, @floatFromInt(count)) / (@as(f64, @floatFromInt(elapsed_ms)) / 1000.0)
+        else
+            0;
+        std.debug.print("Requests: {d} | RPS: {d:.0}\n", .{ count, rps });
+    }
+}
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -33,13 +57,13 @@ pub fn main() !void {
     else
         8888;
 
-    // Create listening socket
-    const listen_fd = try posix.socket(posix.AF.INET, posix.SOCK.STREAM | posix.SOCK.NONBLOCK, 0);
-    defer posix.close(listen_fd);
+    // Create socket
+    const sockfd = try posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0);
+    defer posix.close(sockfd);
 
-    // Set SO_REUSEADDR and SO_REUSEPORT
+    // Set SO_REUSEADDR
     const optval: u32 = 1;
-    try posix.setsockopt(listen_fd, posix.SOL.SOCKET, posix.SO.REUSEADDR, std.mem.asBytes(&optval));
+    try posix.setsockopt(sockfd, posix.SOL.SOCKET, posix.SO.REUSEADDR, std.mem.asBytes(&optval));
 
     // Bind
     const addr = posix.sockaddr.in{
@@ -47,70 +71,28 @@ pub fn main() !void {
         .port = std.mem.nativeToBig(u16, port),
         .addr = 0, // INADDR_ANY
     };
-    try posix.bind(listen_fd, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
+    try posix.bind(sockfd, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
 
-    // Listen with maximum backlog
-    try posix.listen(listen_fd, 65535);
+    // Listen with large backlog
+    try posix.listen(sockfd, 8192);
 
     std.debug.print("Echo server listening on http://127.0.0.1:{d}\n", .{port});
-    std.debug.print("Mode: Single-threaded epoll event loop\n", .{});
     std.debug.print("Press Ctrl+C to stop\n\n", .{});
 
     start_instant = std.time.Instant.now() catch unreachable;
 
-    // Create epoll instance
-    const epoll_fd = try posix.epoll_create1(0);
-    defer posix.close(epoll_fd);
-
-    // Add listener to epoll
-    var listen_event = linux.epoll_event{
-        .events = linux.EPOLL.IN,
-        .data = .{ .fd = listen_fd },
-    };
-    try posix.epoll_ctl(epoll_fd, linux.EPOLL.CTL_ADD, listen_fd, &listen_event);
-
-    var events: [1024]linux.epoll_event = undefined;
-
-    // Event loop
+    // Accept loop with thread per connection
     while (true) {
-        const nfds = posix.epoll_wait(epoll_fd, &events, -1);
+        const client_fd = posix.accept(sockfd, null, null, 0) catch |err| {
+            std.debug.print("Accept error: {}\n", .{err});
+            continue;
+        };
 
-        for (events[0..@intCast(nfds)]) |event| {
-            if (event.data.fd == listen_fd) {
-                // Accept new connections
-                while (true) {
-                    const client_fd = posix.accept(listen_fd, null, null, posix.SOCK.NONBLOCK) catch break;
-
-                    // Handle immediately - read request
-                    var buf: [4096]u8 = undefined;
-                    _ = posix.read(client_fd, &buf) catch {
-                        posix.close(client_fd);
-                        continue;
-                    };
-
-                    // Send response
-                    _ = posix.write(client_fd, RESPONSE) catch {};
-                    posix.close(client_fd);
-
-                    request_count += 1;
-
-                    // Print stats every 100000 requests
-                    if (request_count % 100000 == 0) {
-                        const now = std.time.Instant.now() catch continue;
-                        const elapsed_ns = now.since(start_instant);
-                        const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
-                        const rps = if (elapsed_ms > 0)
-                            @as(f64, @floatFromInt(request_count)) / (@as(f64, @floatFromInt(elapsed_ms)) / 1000.0)
-                        else
-                            0;
-                        std.debug.print("Requests: {d} | Elapsed: {d}ms | RPS: {d:.0}\n", .{
-                            request_count,
-                            elapsed_ms,
-                            rps,
-                        });
-                    }
-                }
-            }
-        }
+        // Spawn detached thread
+        const thread = std.Thread.spawn(.{}, handleClient, .{client_fd}) catch {
+            handleClient(client_fd);
+            continue;
+        };
+        thread.detach();
     }
 }
