@@ -258,12 +258,22 @@ fn makeDirectRequest(url: []const u8) bool {
     const request = "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
     _ = posix.write(sockfd, request) catch return false;
 
-    // Read response - for sustained benchmark, any response counts as success
+    // Read response - keep reading until we get data or connection closes
     var buf: [256]u8 = undefined;
-    const n = posix.read(sockfd, &buf) catch return false;
+    var total_read: usize = 0;
 
-    // Success if we got any response data
-    return n > 0;
+    // Try reading multiple times (server might not have responded yet)
+    for (0..100) |_| {
+        const n = posix.read(sockfd, buf[total_read..]) catch return total_read > 0;
+        if (n == 0) {
+            // Connection closed - success if we got any data
+            return total_read > 0;
+        }
+        total_read += n;
+        if (total_read > 0) return true;
+    }
+
+    return total_read > 0;
 }
 
 fn printUsage() void {
