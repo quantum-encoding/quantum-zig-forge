@@ -237,18 +237,22 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
 
     try child.spawn();
 
-    // Read output using buffer (Zig 0.16: use read instead of readAll)
+    // Wait for child to complete first
+    _ = try child.wait();
+
+    const end_instant = std.time.Instant.now() catch unreachable;
+
+    // Now read all output from the pipe (child has finished writing)
     var buf: [10 * 1024 * 1024]u8 = undefined; // 10MB buffer
     var total_read: usize = 0;
-    while (true) {
-        const bytes_read = child.stdout.?.read(buf[total_read..]) catch break;
-        if (bytes_read == 0) break;
-        total_read += bytes_read;
-        if (total_read >= buf.len) break;
+    if (child.stdout) |*stdout| {
+        while (total_read < buf.len) {
+            const bytes_read = stdout.read(buf[total_read..]) catch break;
+            if (bytes_read == 0) break;
+            total_read += bytes_read;
+        }
     }
     const output = buf[0..total_read];
-
-    _ = try child.wait();
 
     const end_instant = std.time.Instant.now() catch unreachable;
     const elapsed_ns = end_instant.since(start_instant);
