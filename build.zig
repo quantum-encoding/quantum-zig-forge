@@ -9,6 +9,7 @@ pub fn build(b: *std.Build) void {
 
     // Programs
     buildProgram(b, "http_sentinel", target, optimize, build_all);
+    buildProgram(b, "quantum_curl", target, optimize, build_all);
     buildProgram(b, "guardian_shield", target, optimize, build_all);
     buildProgram(b, "chronos_engine", target, optimize, build_all);
     buildProgram(b, "zig_jail", target, optimize, build_all);
