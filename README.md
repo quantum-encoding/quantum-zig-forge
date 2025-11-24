@@ -7,8 +7,9 @@ A monorepo of production-grade Zig programs and libraries developed by QUANTUM E
 ```
 quantum-zig-forge/
 ├── programs/             # Standalone programs
-│   ├── quantum_curl/     # High-velocity command-driven HTTP router [PREMIER]
-│   ├── http_sentinel/    # Production HTTP client library
+│   ├── zig_ai/           # Universal AI CLI (Claude, DeepSeek, Gemini, Grok, Vertex)
+│   ├── http_sentinel/    # Production HTTP client library with AI providers
+│   │   └── programs/quantum_curl/  # High-velocity HTTP router [PREMIER]
 │   ├── guardian_shield/  # Multi-layered Linux security framework
 │   ├── chronos_engine/   # Sovereign Clock temporal tracking system
 │   ├── zig_jail/         # Kernel-enforced syscall sandbox
