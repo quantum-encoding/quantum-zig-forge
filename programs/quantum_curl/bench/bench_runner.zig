@@ -131,19 +131,19 @@ pub fn main() !void {
 
     // Output JSON if requested
     if (output_json) {
-        const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+        const stdout_file = std.fs.File.stdout();
         var stdout_buffer: [8192]u8 = undefined;
-        const stdout = stdout_file.writer(&stdout_buffer);
-        try stdout.writeAll("{\n  \"benchmarks\": [\n");
+        var writer = stdout_file.writer(&stdout_buffer);
+        try writer.interface.writeAll("{\n  \"benchmarks\": [\n");
         for (results.items, 0..) |result, idx| {
-            try result.toJson(stdout);
+            try result.toJson(&writer.interface);
             if (idx < results.items.len - 1) {
-                try stdout.writeAll(",\n");
+                try writer.interface.writeAll(",\n");
             } else {
-                try stdout.writeAll("\n");
+                try writer.interface.writeAll("\n");
             }
         }
-        try stdout.writeAll("  ],\n");
+        try writer.interface.writeAll("  ],\n");
 
         // Summary
         var total_rps: f64 = 0;
@@ -155,7 +155,7 @@ pub fn main() !void {
         const avg_rps = total_rps / @as(f64, @floatFromInt(results.items.len - 1));
         const avg_p99 = total_p99 / (results.items.len - 1);
 
-        try stdout.print(
+        try writer.interface.print(
             \\  "summary": {{
             \\    "avg_requests_per_second": {d:.2},
             \\    "avg_p99_latency_ms": {d}
@@ -163,6 +163,7 @@ pub fn main() !void {
             \\}}
             \\
         , .{ avg_rps, avg_p99 });
+        try writer.interface.flush();
     } else {
         // Print summary
         std.debug.print("\n", .{});
