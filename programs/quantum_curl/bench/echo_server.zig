@@ -5,8 +5,7 @@
 // quantum-curl's true throughput without network/server bottlenecks.
 
 const std = @import("std");
-const net = std.net;
-const http = std.http;
+const posix = std.posix;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -21,12 +20,24 @@ pub fn main() !void {
     else
         8888;
 
-    const address = net.Address.initIp4(.{ 127, 0, 0, 1 }, port);
+    // Create socket
+    const sockfd = try posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0);
+    defer posix.close(sockfd);
 
-    var server = try address.listen(.{
-        .reuse_address = true,
-    });
-    defer server.deinit();
+    // Set SO_REUSEADDR
+    const optval: u32 = 1;
+    try posix.setsockopt(sockfd, posix.SOL.SOCKET, posix.SO.REUSEADDR, std.mem.asBytes(&optval));
+
+    // Bind
+    const addr = posix.sockaddr.in{
+        .family = posix.AF.INET,
+        .port = std.mem.nativeToBig(u16, port),
+        .addr = 0, // INADDR_ANY
+    };
+    try posix.bind(sockfd, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
+
+    // Listen
+    try posix.listen(sockfd, 128);
 
     std.debug.print("Echo server listening on http://127.0.0.1:{d}\n", .{port});
     std.debug.print("Press Ctrl+C to stop\n\n", .{});
@@ -34,30 +45,30 @@ pub fn main() !void {
     var request_count: u64 = 0;
     const start_time = std.time.milliTimestamp();
 
+    // Pre-build response
+    const response =
+        "HTTP/1.1 200 OK\r\n" ++
+        "Content-Type: application/json\r\n" ++
+        "Content-Length: 23\r\n" ++
+        "Connection: close\r\n" ++
+        "\r\n" ++
+        "{\"status\":\"ok\",\"id\":1}";
+
     while (true) {
-        var conn = server.accept() catch |err| {
+        const client_fd = posix.accept(sockfd, null, null) catch |err| {
             std.debug.print("Accept error: {}\n", .{err});
             continue;
         };
 
         request_count += 1;
 
-        // Simple HTTP response - minimal processing
-        const response =
-            "HTTP/1.1 200 OK\r\n" ++
-            "Content-Type: application/json\r\n" ++
-            "Content-Length: 23\r\n" ++
-            "Connection: close\r\n" ++
-            "\r\n" ++
-            "{\"status\":\"ok\",\"id\":1}";
-
         // Read request (drain it)
         var buf: [4096]u8 = undefined;
-        _ = conn.stream.read(&buf) catch {};
+        _ = posix.read(client_fd, &buf) catch {};
 
         // Send response
-        _ = conn.stream.writeAll(response) catch {};
-        conn.stream.close();
+        _ = posix.write(client_fd, response) catch {};
+        posix.close(client_fd);
 
         // Print stats every 1000 requests
         if (request_count % 1000 == 0) {
