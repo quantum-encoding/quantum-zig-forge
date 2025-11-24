@@ -86,7 +86,7 @@ pub fn main() !void {
     std.debug.print("---------|-----------|----------|----------|---------|---------|--------\n", .{});
 
     while (running.load(.monotonic)) {
-        std.time.sleep(config.report_interval_seconds * std.time.ns_per_s);
+        std.posix.nanosleep(config.report_interval_seconds, 0);
 
         const now = std.time.Instant.now() catch continue;
         const elapsed_ns = now.since(start_instant);
