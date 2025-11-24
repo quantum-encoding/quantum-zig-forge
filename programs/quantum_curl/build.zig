@@ -104,4 +104,23 @@ pub fn build(b: *std.Build) void {
     }
     const bench_step = b.step("bench", "Run performance benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // Sustained Benchmark - long-running performance test
+    const sustained_bench_module = b.createModule(.{
+        .root_source_file = b.path("bench/sustained_bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    const sustained_bench = b.addExecutable(.{
+        .name = "sustained-bench",
+        .root_module = sustained_bench_module,
+    });
+    b.installArtifact(sustained_bench);
+
+    const run_sustained = b.addRunArtifact(sustained_bench);
+    if (b.args) |args| {
+        run_sustained.addArgs(args);
+    }
+    const sustained_step = b.step("sustained", "Run sustained performance benchmark");
+    sustained_step.dependOn(&run_sustained.step);
 }
