@@ -1,0 +1,20 @@
+.{
+    .name = .@"quantum-curl",
+    .version = "1.0.0",
+    .fingerprint = 0x12345678deadbeef, // Placeholder - Zig will regenerate
+    .minimum_zig_version = "0.14.0",
+
+    .dependencies = .{
+        .http_sentinel = .{
+            .path = "../http_sentinel",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "examples",
+        "README.md",
+    },
+}
