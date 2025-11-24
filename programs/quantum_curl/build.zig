@@ -68,11 +68,14 @@ pub fn build(b: *std.Build) void {
     // ============================================================
 
     // Echo Server - minimal HTTP server for controlled benchmarking
-    const echo_server = b.addExecutable(.{
-        .name = "bench-echo-server",
+    const echo_server_module = b.createModule(.{
         .root_source_file = b.path("bench/echo_server.zig"),
         .target = target,
         .optimize = .ReleaseFast, // Always optimize benchmarks
+    });
+    const echo_server = b.addExecutable(.{
+        .name = "bench-echo-server",
+        .root_module = echo_server_module,
     });
     b.installArtifact(echo_server);
 
@@ -84,11 +87,14 @@ pub fn build(b: *std.Build) void {
     echo_step.dependOn(&run_echo.step);
 
     // Benchmark Runner - statistical analysis and regression detection
-    const bench_runner = b.addExecutable(.{
-        .name = "bench-quantum-curl",
+    const bench_runner_module = b.createModule(.{
         .root_source_file = b.path("bench/bench_runner.zig"),
         .target = target,
         .optimize = .ReleaseFast,
+    });
+    const bench_runner = b.addExecutable(.{
+        .name = "bench-quantum-curl",
+        .root_module = bench_runner_module,
     });
     b.installArtifact(bench_runner);
 
