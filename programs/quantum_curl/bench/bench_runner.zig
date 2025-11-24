@@ -222,6 +222,9 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
     const concurrency_str = try std.fmt.allocPrint(allocator, "{d}", .{config.concurrency});
     defer allocator.free(concurrency_str);
 
+    // Output file for quantum-curl results
+    const output_path = "/tmp/quantum_curl_bench_output.jsonl";
+
     var child = std.process.Child.init(
         &[_][]const u8{
             "/home/founder/github_public/quantum-zig-forge/programs/quantum_curl/zig-out/bin/quantum-curl",
@@ -229,32 +232,46 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
             temp_path,
             "--concurrency",
             concurrency_str,
+            "--output",
+            output_path,
         },
         allocator,
     );
-    child.stdout_behavior = .Pipe;
+    child.stdout_behavior = .Ignore;
     child.stderr_behavior = .Ignore;
 
     try child.spawn();
 
-    // Wait for child to complete first
+    // Wait for child to complete
     _ = try child.wait();
 
     const end_instant = std.time.Instant.now() catch unreachable;
     const elapsed_ns = end_instant.since(start_instant);
     const total_time_ms = elapsed_ns / std.time.ns_per_ms;
 
-    // Now read all output from the pipe (child has finished writing)
-    var buf: [10 * 1024 * 1024]u8 = undefined; // 10MB buffer
-    var total_read: usize = 0;
-    if (child.stdout) |*stdout| {
-        while (total_read < buf.len) {
-            const bytes_read = stdout.read(buf[total_read..]) catch break;
-            if (bytes_read == 0) break;
-            total_read += bytes_read;
-        }
-    }
-    const output = buf[0..total_read];
+    // Read output from file
+    const output_file = std.fs.cwd().openFile(output_path, .{}) catch {
+        return BenchmarkResult{
+            .name = config.name,
+            .total_requests = config.request_count,
+            .successful_requests = 0,
+            .failed_requests = config.request_count,
+            .total_time_ms = total_time_ms,
+            .min_latency_ms = 0,
+            .max_latency_ms = 0,
+            .avg_latency_ms = 0,
+            .p50_latency_ms = 0,
+            .p95_latency_ms = 0,
+            .p99_latency_ms = 0,
+            .requests_per_second = 0,
+        };
+    };
+    defer output_file.close();
+
+    const stat = try output_file.stat();
+    const output = try allocator.alloc(u8, stat.size);
+    defer allocator.free(output);
+    _ = try output_file.readAll(output);
 
     // Parse results and collect latencies
     var latencies = std.ArrayList(u64){};
