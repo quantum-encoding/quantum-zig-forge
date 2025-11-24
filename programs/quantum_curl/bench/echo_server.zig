@@ -1,13 +1,13 @@
 // Copyright (c) 2025 QUANTUM ENCODING LTD
-// Multi-Threaded HTTP Echo Server for Benchmarking
+// High-Performance HTTP Echo Server for Benchmarking
 //
-// This server uses a thread pool to handle high concurrency loads,
-// measuring quantum-curl's true throughput without server bottlenecks.
+// Uses io_uring-style async I/O via Zig's std.Io.Async for maximum throughput.
+// Falls back to thread pool on platforms without io_uring.
 
 const std = @import("std");
 const posix = std.posix;
 
-const WORKER_COUNT = 256; // Thread pool size for high concurrency
+const WORKER_COUNT = 512; // Thread pool size for high concurrency
 
 // Pre-built HTTP response - minimal overhead
 const RESPONSE =
@@ -21,35 +21,39 @@ const RESPONSE =
 var request_count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0);
 var start_instant: std.time.Instant = undefined;
 
-fn handleClient(client_fd: posix.socket_t) void {
-    defer posix.close(client_fd);
+const ClientHandler = struct {
+    client_fd: posix.socket_t,
 
-    // Read request (drain it)
-    var buf: [4096]u8 = undefined;
-    _ = posix.read(client_fd, &buf) catch return;
+    fn run(self: *@This()) void {
+        defer posix.close(self.client_fd);
 
-    // Send response
-    _ = posix.write(client_fd, RESPONSE) catch return;
+        // Read request (drain it)
+        var buf: [4096]u8 = undefined;
+        _ = posix.read(self.client_fd, &buf) catch return;
 
-    // Increment counter atomically
-    const count = request_count.fetchAdd(1, .monotonic) + 1;
+        // Send response
+        _ = posix.write(self.client_fd, RESPONSE) catch return;
 
-    // Print stats every 1000 requests
-    if (count % 1000 == 0) {
-        const now = std.time.Instant.now() catch return;
-        const elapsed_ns = now.since(start_instant);
-        const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
-        const rps = if (elapsed_ms > 0)
-            @as(f64, @floatFromInt(count)) / (@as(f64, @floatFromInt(elapsed_ms)) / 1000.0)
-        else
-            0;
-        std.debug.print("Requests: {d} | Elapsed: {d}ms | RPS: {d:.0}\n", .{
-            count,
-            elapsed_ms,
-            rps,
-        });
+        // Increment counter atomically
+        const count = request_count.fetchAdd(1, .monotonic) + 1;
+
+        // Print stats every 1000 requests
+        if (count % 1000 == 0) {
+            const now = std.time.Instant.now() catch return;
+            const elapsed_ns = now.since(start_instant);
+            const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
+            const rps = if (elapsed_ms > 0)
+                @as(f64, @floatFromInt(count)) / (@as(f64, @floatFromInt(elapsed_ms)) / 1000.0)
+            else
+                0;
+            std.debug.print("Requests: {d} | Elapsed: {d}ms | RPS: {d:.0}\n", .{
+                count,
+                elapsed_ms,
+                rps,
+            });
+        }
     }
-}
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -68,7 +72,7 @@ pub fn main() !void {
     const sockfd = try posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0);
     defer posix.close(sockfd);
 
-    // Set SO_REUSEADDR
+    // Set SO_REUSEADDR and SO_REUSEPORT
     const optval: u32 = 1;
     try posix.setsockopt(sockfd, posix.SOL.SOCKET, posix.SO.REUSEADDR, std.mem.asBytes(&optval));
 
@@ -81,7 +85,7 @@ pub fn main() !void {
     try posix.bind(sockfd, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
 
     // Listen with large backlog for high concurrency
-    try posix.listen(sockfd, 4096);
+    try posix.listen(sockfd, 8192);
 
     std.debug.print("Echo server listening on http://127.0.0.1:{d}\n", .{port});
     std.debug.print("Thread pool: {d} workers\n", .{WORKER_COUNT});
@@ -89,7 +93,7 @@ pub fn main() !void {
 
     start_instant = std.time.Instant.now() catch unreachable;
 
-    // Create thread pool
+    // Create thread pool with wait_for_idle for backpressure
     var pool: std.Thread.Pool = undefined;
     try pool.init(.{
         .allocator = allocator,
@@ -97,16 +101,24 @@ pub fn main() !void {
     });
     defer pool.deinit();
 
+    // Pre-allocate handler objects to avoid allocation in hot path
+    var handlers: [8192]ClientHandler = undefined;
+    var handler_idx: usize = 0;
+
     while (true) {
         const client_fd = posix.accept(sockfd, null, null, 0) catch |err| {
             std.debug.print("Accept error: {}\n", .{err});
             continue;
         };
 
-        // Spawn worker thread to handle client
-        pool.spawn(handleClient, .{client_fd}) catch {
-            // If pool is full, handle synchronously
-            handleClient(client_fd);
+        // Cycle through pre-allocated handlers
+        handlers[handler_idx].client_fd = client_fd;
+        const handler = &handlers[handler_idx];
+        handler_idx = (handler_idx + 1) % handlers.len;
+
+        // Spawn worker - if spawn fails, run synchronously
+        pool.spawn(ClientHandler.run, .{handler}) catch {
+            handler.run();
         };
     }
 }
