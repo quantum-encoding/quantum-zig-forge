@@ -233,12 +233,16 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
 
     try child.spawn();
 
-    // Read output
-    var output = std.ArrayList(u8){};
-    defer output.deinit(allocator);
-
-    const stdout = child.stdout.?;
-    try stdout.reader().readAllArrayList(&output, allocator, 100 * 1024 * 1024); // 100MB max
+    // Read output using buffer (Zig 0.16: use read instead of readAll)
+    var buf: [10 * 1024 * 1024]u8 = undefined; // 10MB buffer
+    var total_read: usize = 0;
+    while (true) {
+        const bytes_read = child.stdout.?.read(buf[total_read..]) catch break;
+        if (bytes_read == 0) break;
+        total_read += bytes_read;
+        if (total_read >= buf.len) break;
+    }
+    const output = buf[0..total_read];
 
     _ = try child.wait();
 
