@@ -242,8 +242,9 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
 
     _ = try child.wait();
 
-    const end_time = std.time.milliTimestamp();
-    const total_time_ms = @as(u64, @intCast(end_time - start_time));
+    const end_instant = std.time.Instant.now() catch unreachable;
+    const elapsed_ns = end_instant.since(start_instant);
+    const total_time_ms = elapsed_ns / std.time.ns_per_ms;
 
     // Parse results and collect latencies
     var latencies = std.ArrayList(u64){};
