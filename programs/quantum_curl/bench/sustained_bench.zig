@@ -242,9 +242,13 @@ fn workerThread(target_url: []const u8, start_instant: std.time.Instant, end_tim
 fn makeDirectRequest(url: []const u8) bool {
     _ = url;
 
-    // Direct socket connection to echo server for minimal overhead
+    // Direct socket connection to echo server (blocking mode)
     const sockfd = posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0) catch return false;
     defer posix.close(sockfd);
+
+    // Set receive timeout to prevent hanging forever (100ms)
+    const timeout = posix.timeval{ .sec = 0, .usec = 100000 };
+    posix.setsockopt(sockfd, posix.SOL.SOCKET, posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
     const addr = posix.sockaddr.in{
         .family = posix.AF.INET,
@@ -258,22 +262,12 @@ fn makeDirectRequest(url: []const u8) bool {
     const request = "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
     _ = posix.write(sockfd, request) catch return false;
 
-    // Read response - keep reading until we get data or connection closes
+    // Read response (blocking with timeout)
     var buf: [256]u8 = undefined;
-    var total_read: usize = 0;
+    const n = posix.read(sockfd, &buf) catch return false;
 
-    // Try reading multiple times (server might not have responded yet)
-    for (0..100) |_| {
-        const n = posix.read(sockfd, buf[total_read..]) catch return total_read > 0;
-        if (n == 0) {
-            // Connection closed - success if we got any data
-            return total_read > 0;
-        }
-        total_read += n;
-        if (total_read > 0) return true;
-    }
-
-    return total_read > 0;
+    // Success if we got any response data
+    return n > 0;
 }
 
 fn printUsage() void {
