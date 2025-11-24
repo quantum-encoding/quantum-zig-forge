@@ -98,12 +98,13 @@ pub fn main() !void {
     }
 
     // Benchmark configurations - escalating load
+    // Note: Concurrency is capped at 100 to avoid FD exhaustion on typical systems
     const benchmarks = [_]BenchmarkConfig{
         .{ .name = "warmup", .request_count = 100, .concurrency = 10, .target_url = target_url },
         .{ .name = "light_load", .request_count = 500, .concurrency = 25, .target_url = target_url },
         .{ .name = "medium_load", .request_count = 1000, .concurrency = 50, .target_url = target_url },
         .{ .name = "heavy_load", .request_count = 2000, .concurrency = 100, .target_url = target_url },
-        .{ .name = "stress_test", .request_count = 5000, .concurrency = 200, .target_url = target_url },
+        .{ .name = "stress_test", .request_count = 5000, .concurrency = 100, .target_url = target_url },
     };
 
     var results = std.ArrayList(BenchmarkResult){};
