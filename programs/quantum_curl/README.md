@@ -47,12 +47,23 @@ The genius lies in the decoupling of the **Battle Plan** (the JSONL manifest) fr
 
 ## Performance Characteristics
 
-| Metric | Value | Comparison |
-|--------|-------|------------|
-| Routing Latency | ~2ms p99 | 5-7x lower than nginx |
+### Sustained Benchmark Results (60 seconds)
+
+| Concurrency | Total Requests | Throughput | Success Rate | Avg Latency |
+|-------------|----------------|------------|--------------|-------------|
+| 100 workers | 2,892,251 | 48,202 req/sec | 100.0% | 2.07 ms |
+| 200 workers | 2,810,481 | 46,836 req/sec | 100.0% | 4.27 ms |
+
+### Key Metrics
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Sustained Throughput | ~48K req/sec | Consistent over 60+ seconds |
+| Success Rate | 100% | Zero failures under load |
+| Latency (100 concurrent) | ~2ms avg | Min: 0ms, Max: 21ms |
+| Latency (200 concurrent) | ~4ms avg | Min: 0ms, Max: 41ms |
 | Concurrency Model | Thread-per-request | Zero contention |
-| Max Concurrent | Configurable (default 50) | Scale to hardware |
-| Memory Pattern | Client-per-worker | No shared state |
+| Memory Pattern | Client-per-worker | No shared state, no leaks |
 
 ## Strategic Applications
 
