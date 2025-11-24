@@ -61,4 +61,41 @@ pub fn build(b: *std.Build) void {
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
     const test_step = b.step("test", "Run quantum-curl tests");
     test_step.dependOn(&run_lib_unit_tests.step);
+
+    // ============================================================
+    // BENCHMARKS
+    // Performance testing infrastructure for CI/CD regression detection
+    // ============================================================
+
+    // Echo Server - minimal HTTP server for controlled benchmarking
+    const echo_server = b.addExecutable(.{
+        .name = "bench-echo-server",
+        .root_source_file = b.path("bench/echo_server.zig"),
+        .target = target,
+        .optimize = .ReleaseFast, // Always optimize benchmarks
+    });
+    b.installArtifact(echo_server);
+
+    const run_echo = b.addRunArtifact(echo_server);
+    if (b.args) |args| {
+        run_echo.addArgs(args);
+    }
+    const echo_step = b.step("echo-server", "Run benchmark echo server");
+    echo_step.dependOn(&run_echo.step);
+
+    // Benchmark Runner - statistical analysis and regression detection
+    const bench_runner = b.addExecutable(.{
+        .name = "bench-quantum-curl",
+        .root_source_file = b.path("bench/bench_runner.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    b.installArtifact(bench_runner);
+
+    const run_bench = b.addRunArtifact(bench_runner);
+    if (b.args) |args| {
+        run_bench.addArgs(args);
+    }
+    const bench_step = b.step("bench", "Run performance benchmarks");
+    bench_step.dependOn(&run_bench.step);
 }
