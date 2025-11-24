@@ -43,7 +43,7 @@ pub fn main() !void {
     std.debug.print("Press Ctrl+C to stop\n\n", .{});
 
     var request_count: u64 = 0;
-    const start_time = std.time.milliTimestamp();
+    const start_instant = std.time.Instant.now() catch unreachable;
 
     // Pre-build response
     const response =
