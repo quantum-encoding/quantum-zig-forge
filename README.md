@@ -95,11 +95,74 @@ zig build clean
 
 ## Programs
 
+### zig_ai
+
+**Universal AI Providers CLI Tool**
+
+Command-line interface for interacting with multiple AI providers: Claude, DeepSeek, Gemini, Grok, and Vertex AI.
+
+**Features:**
+- One-shot queries and interactive mode
+- Batch processing with CSV input/output
+- Cost estimation based on actual model pricing
+- Conversation context tracking
+- Configurable temperature and max tokens
+
+**Quick Start:**
+```bash
+# One-shot query
+zig-ai deepseek "What is Zig?"
+zig-ai claude --temperature 0.5 "Explain async"
+
+# Interactive mode
+zig-ai --interactive gemini
+
+# Batch processing
+zig-ai --batch prompts.csv --output results.csv --concurrency 50
+
+# List providers
+zig-ai --list
+```
+
+**Environment Variables:**
+- `ANTHROPIC_API_KEY` - Claude
+- `DEEPSEEK_API_KEY` - DeepSeek
+- `GOOGLE_GENAI_API_KEY` - Gemini
+- `XAI_API_KEY` - Grok
+- `VERTEX_PROJECT_ID` - Vertex AI
+
+**Documentation:** [programs/zig_ai/README.md](programs/zig_ai/README.md)
+
+**Binary:** `zig-ai`
+
+---
+
+### http_sentinel
+
+A production-grade HTTP client library for Zig 0.16.0+, built on `std.Io.Threaded` architecture. Provides AI provider clients and the core HTTP infrastructure.
+
+**Features:**
+- Thread-safe concurrent HTTP operations
+- Client-per-worker pattern for zero contention
+- Automatic GZIP decompression
+- Full HTTP method support (GET, POST, PUT, PATCH, DELETE, HEAD)
+- AI provider clients (Claude, DeepSeek, Gemini, Grok, Vertex)
+- Production-tested in high-frequency trading systems
+
+**Documentation:** [programs/http_sentinel/README.md](programs/http_sentinel/README.md)
+
+**Binaries:**
+- Multiple examples and demos
+
+---
+
 ### quantum_curl (Premier Strategic Asset)
 
 **High-Velocity Command-Driven Router for Microservice Orchestration**
 
 Quantum Curl is not a curl clone. It is a strategic weapon designed for the orchestration and stress-testing of complex microservice architectures. The core innovation: decoupling the **Battle Plan** (JSONL manifest) from the **Execution Engine** (high-concurrency Zig runtime).
+
+**Location:** `programs/http_sentinel/programs/quantum_curl/`
 
 **Performance:**
 | Metric | Value | Comparison |
@@ -123,28 +186,9 @@ echo '{"id":"1","method":"GET","url":"https://httpbin.org/get"}' | quantum-curl
 quantum-curl --file battle-plan.jsonl --concurrency 100
 ```
 
-**Documentation:** [programs/quantum_curl/README.md](programs/quantum_curl/README.md)
+**Documentation:** [programs/http_sentinel/programs/quantum_curl/README.md](programs/http_sentinel/programs/quantum_curl/README.md)
 
 **Binary:** `quantum-curl`
-
----
-
-### http_sentinel
-
-A production-grade HTTP client library for Zig 0.16.0+, built on `std.Io.Threaded` architecture. This is the core dependency for quantum_curl.
-
-**Features:**
-- Thread-safe concurrent HTTP operations
-- Client-per-worker pattern for zero contention
-- Automatic GZIP decompression
-- Full HTTP method support (GET, POST, PUT, PATCH, DELETE, HEAD)
-- Production-tested in high-frequency trading systems
-
-**Documentation:** [programs/http_sentinel/README.md](programs/http_sentinel/README.md)
-
-**Binaries:**
-- `zig-ai` - AI providers CLI tool
-- Multiple examples and demos
 
 ### guardian_shield
 
