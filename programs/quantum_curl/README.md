@@ -294,9 +294,38 @@ COPY zig-out/bin/quantum-curl /usr/local/bin/
 ENTRYPOINT ["quantum-curl"]
 ```
 
+## Benchmarking
+
+Quantum Curl includes a comprehensive benchmark suite for performance validation:
+
+```bash
+# Build benchmark tools
+zig build
+
+# Start the echo server (in terminal 1)
+./zig-out/bin/bench-echo-server 8888
+
+# Run quick benchmark (in terminal 2)
+./zig-out/bin/bench-quantum-curl
+
+# Run sustained 60-second benchmark
+./zig-out/bin/sustained-bench --duration 60 --concurrency 100
+
+# Run high-concurrency stress test
+./zig-out/bin/sustained-bench --duration 60 --concurrency 200
+```
+
+### Benchmark Tools
+
+| Tool | Purpose |
+|------|---------|
+| `bench-echo-server` | Minimal HTTP server for controlled benchmarking |
+| `bench-quantum-curl` | Quick statistical benchmark with regression detection |
+| `sustained-bench` | Long-running performance validation |
+
 ## Requirements
 
-- **Zig Version**: 0.14.0+
+- **Zig Version**: 0.16.0+
 - **Dependency**: http_sentinel (included via monorepo)
 - **Platform**: Linux, macOS, Windows
 
