@@ -97,8 +97,9 @@ pub fn main() !void {
     }
 
     // Initialize the Execution Engine
+    // Use larger buffer for high concurrency (64KB to handle burst writes)
     const stdout = std.fs.File.stdout();
-    var stdout_buffer: [8192]u8 = undefined;
+    var stdout_buffer: [65536]u8 = undefined;
     var writer = stdout.writer(&stdout_buffer);
 
     const EngineType = Engine(@TypeOf(writer));
