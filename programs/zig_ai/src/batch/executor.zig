@@ -12,11 +12,11 @@ const cli = @import("../cli.zig");
 const http_sentinel = @import("http-sentinel");
 const ai = http_sentinel.ai;
 const ai_common = ai.common;
-const anthropic = ai.anthropic;
-const deepseek = ai.deepseek;
-const gemini = ai.gemini;
-const grok = ai.grok;
-const vertex = ai.vertex;
+const ClaudeClient = ai.ClaudeClient;
+const DeepSeekClient = ai.DeepSeekClient;
+const GeminiClient = ai.GeminiClient;
+const GrokClient = ai.GrokClient;
+const VertexClient = ai.VertexClient;
 
 /// Thread-safe batch executor using fixed-size thread pool
 pub const BatchExecutor = struct {
