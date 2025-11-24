@@ -177,8 +177,6 @@ fn workerThread(target_url: []const u8, start_instant: std.time.Instant, end_tim
     _ = worker_id;
 
     // Each worker continuously makes requests until time is up
-    var request_id: u64 = 0;
-
     while (running.load(.monotonic)) {
         const now = std.time.Instant.now() catch break;
         if (now.since(start_instant) >= end_time_ns) {
@@ -187,8 +185,7 @@ fn workerThread(target_url: []const u8, start_instant: std.time.Instant, end_tim
 
         const req_start = std.time.Instant.now() catch continue;
 
-        // Make HTTP request via quantum-curl subprocess
-        // For sustained benchmark, we use direct socket connection for lower overhead
+        // Make HTTP request with blocking socket
         const success = makeDirectRequest(target_url);
 
         const req_end = std.time.Instant.now() catch continue;
@@ -204,38 +201,23 @@ fn workerThread(target_url: []const u8, start_instant: std.time.Instant, end_tim
             _ = global_stats.failed_requests.fetchAdd(1, .monotonic);
         }
 
-        // Update min/max latency (relaxed ordering is fine for stats)
+        // Update min latency
         var current_min = global_stats.min_latency_ns.load(.monotonic);
         while (latency_ns < current_min) {
-            const result = global_stats.min_latency_ns.cmpxchgWeak(
-                current_min,
-                latency_ns,
-                .monotonic,
-                .monotonic,
-            );
+            const result = global_stats.min_latency_ns.cmpxchgWeak(current_min, latency_ns, .monotonic, .monotonic);
             if (result) |new_val| {
                 current_min = new_val;
-            } else {
-                break;
-            }
+            } else break;
         }
 
+        // Update max latency
         var current_max = global_stats.max_latency_ns.load(.monotonic);
         while (latency_ns > current_max) {
-            const result = global_stats.max_latency_ns.cmpxchgWeak(
-                current_max,
-                latency_ns,
-                .monotonic,
-                .monotonic,
-            );
+            const result = global_stats.max_latency_ns.cmpxchgWeak(current_max, latency_ns, .monotonic, .monotonic);
             if (result) |new_val| {
                 current_max = new_val;
-            } else {
-                break;
-            }
+            } else break;
         }
-
-        request_id += 1;
     }
 }
 
