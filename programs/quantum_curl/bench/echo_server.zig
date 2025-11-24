@@ -55,7 +55,7 @@ pub fn main() !void {
         "{\"status\":\"ok\",\"id\":1}";
 
     while (true) {
-        const client_fd = posix.accept(sockfd, null, null) catch |err| {
+        const client_fd = posix.accept(sockfd, null, null, 0) catch |err| {
             std.debug.print("Accept error: {}\n", .{err});
             continue;
         };
