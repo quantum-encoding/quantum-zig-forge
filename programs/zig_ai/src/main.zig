@@ -114,6 +114,12 @@ pub fn main() !void {
                     config.provider = provider;
                     provider_set = true;
                     continue;
+                } else if (prompt == null and arg.len < 20 and std.mem.indexOf(u8, arg, " ") == null) {
+                    // Looks like a typo'd provider name (short, no spaces, first positional arg)
+                    std.debug.print("Error: Unknown provider '{s}'\n", .{arg});
+                    std.debug.print("Valid providers: claude, deepseek, gemini, grok, vertex\n\n", .{});
+                    cli.printUsage();
+                    return error.UnknownProvider;
                 }
             }
 
