@@ -186,6 +186,15 @@ pub const TextExtractor = struct {
                 }
             },
 
+            .SetFontSize => { // Tf: /FontName size
+                if (stack.items.len >= 2) {
+                    const font_operand = &stack.items[stack.items.len - 2];
+                    if (font_operand.* == .name) {
+                        self.current_font = font_operand.name;
+                    }
+                }
+            },
+
             .ShowText => { // Tj: (string)
                 if (stack.items.len >= 1) {
                     const operand = &stack.items[stack.items.len - 1];
