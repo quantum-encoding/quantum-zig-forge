@@ -238,7 +238,7 @@ pub const ConnectionPool = struct {
             const sock = try self.connect();
             try self.connections.append(self.allocator, PooledConnection{
                 .socket = sock,
-                .last_used = std.time.milliTimestamp(),
+                .last_used = currentTimeMs(),
                 .in_use = true,
             });
             return sock;
