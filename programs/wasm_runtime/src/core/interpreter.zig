@@ -402,8 +402,27 @@ pub const Instance = struct {
 
         // Check if import or defined
         if (func_idx < self.module.import_func_count) {
-            // Import function - look up host function
-            // For now, return error - WASI will handle this
+            // Import function - use import resolver
+            if (self.import_resolver) |resolver| {
+                // Get import info
+                const import = self.module.getImport(func_idx) orelse return error.InvalidFunction;
+
+                // Pop args back from stack for the resolver
+                var call_args = self.allocator.alloc(Value, func_type.params.len) catch return error.OutOfMemory;
+                defer self.allocator.free(call_args);
+
+                var i: usize = func_type.params.len;
+                while (i > 0) {
+                    i -= 1;
+                    call_args[i] = self.stack.pop() orelse return error.StackUnderflow;
+                }
+
+                const result = try resolver(self.import_resolver_ctx.?, import.module, import.name, call_args);
+                if (result) |val| {
+                    self.stack.append(self.allocator, val) catch return error.OutOfMemory;
+                }
+                return result;
+            }
             return error.InvalidFunction;
         }
 
