@@ -293,8 +293,7 @@ fn isOperator(token: Token) bool {
 fn parseOperand(lex: *Lexer, token: Token, allocator: std.mem.Allocator) !Operand {
     switch (token.tag) {
         .number => {
-            const val = token.asFloat() orelse token.asInt().?;
-            return .{ .number = if (token.asFloat()) |f| f else @floatFromInt(token.asInt().?) };
+            return .{ .number = token.asFloat() orelse @floatFromInt(token.asInt() orelse 0) };
         },
         .literal_string => {
             const content = token.stringContent();
