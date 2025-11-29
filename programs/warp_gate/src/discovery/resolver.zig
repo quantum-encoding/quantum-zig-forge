@@ -353,7 +353,7 @@ pub const MdnsDiscovery = struct {
 
     pub fn deinit(self: *Self) void {
         posix.close(self.socket);
-        self.discovered_peers.deinit();
+        self.discovered_peers.deinit(self.allocator);
     }
 
     /// Start announcing our presence
