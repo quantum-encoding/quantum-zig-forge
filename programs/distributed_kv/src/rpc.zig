@@ -76,6 +76,30 @@ pub const NodeAddress = struct {
     pub fn format(self: *const NodeAddress, allocator: std.mem.Allocator) ![]u8 {
         return std.fmt.allocPrint(allocator, "{s}:{d}", .{ self.host, self.port });
     }
+
+    /// Convert to sockaddr for posix calls
+    pub fn toSockaddr(self: *const NodeAddress) !std.posix.sockaddr.in {
+        // Parse IP address (only IPv4 for simplicity)
+        var addr: std.posix.sockaddr.in = .{
+            .family = std.posix.AF.INET,
+            .port = std.mem.nativeToBig(u16, self.port),
+            .addr = 0,
+        };
+
+        // Parse dotted decimal IP
+        var parts: [4]u8 = undefined;
+        var iter = std.mem.splitScalar(u8, self.host, '.');
+        var i: usize = 0;
+        while (iter.next()) |part| {
+            if (i >= 4) return error.InvalidAddress;
+            parts[i] = std.fmt.parseInt(u8, part, 10) catch return error.InvalidAddress;
+            i += 1;
+        }
+        if (i != 4) return error.InvalidAddress;
+
+        addr.addr = @bitCast(parts);
+        return addr;
+    }
 };
 
 /// RPC message
@@ -155,7 +179,7 @@ pub const ClientStatus = enum(u8) {
 
 /// Pooled connection to a peer
 const PooledConnection = struct {
-    stream: std.net.Stream,
+    socket: std.posix.socket_t,
     last_used: i64,
     in_use: bool,
 };
@@ -180,13 +204,13 @@ pub const ConnectionPool = struct {
 
     pub fn deinit(self: *ConnectionPool) void {
         for (self.connections.items) |*conn| {
-            conn.stream.close();
+            std.posix.close(conn.socket);
         }
         self.connections.deinit(self.allocator);
     }
 
     /// Get a connection from the pool or create new one
-    pub fn acquire(self: *ConnectionPool) !std.net.Stream {
+    pub fn acquire(self: *ConnectionPool) !std.posix.socket_t {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -195,31 +219,31 @@ pub const ConnectionPool = struct {
             if (!conn.in_use) {
                 conn.in_use = true;
                 conn.last_used = std.time.milliTimestamp();
-                return conn.stream;
+                return conn.socket;
             }
         }
 
         // Create new connection if under limit
         if (self.connections.items.len < self.max_connections) {
-            const stream = try self.connect();
+            const sock = try self.connect();
             try self.connections.append(self.allocator, PooledConnection{
-                .stream = stream,
+                .socket = sock,
                 .last_used = std.time.milliTimestamp(),
                 .in_use = true,
             });
-            return stream;
+            return sock;
         }
 
         return error.PoolExhausted;
     }
 
     /// Release a connection back to the pool
-    pub fn release(self: *ConnectionPool, stream: std.net.Stream) void {
+    pub fn release(self: *ConnectionPool, sock: std.posix.socket_t) void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
         for (self.connections.items) |*conn| {
-            if (conn.stream.handle == stream.handle) {
+            if (conn.socket == sock) {
                 conn.in_use = false;
                 conn.last_used = std.time.milliTimestamp();
                 return;
@@ -228,16 +252,18 @@ pub const ConnectionPool = struct {
     }
 
     /// Create a new connection
-    fn connect(self: *ConnectionPool) !std.net.Stream {
-        const addr = std.net.Address.parseIp4(self.address.host, self.address.port) catch |err| {
-            // Try IPv6
-            if (err == error.InvalidCharacter or err == error.Overflow) {
-                return std.net.Address.parseIp6(self.address.host, self.address.port) catch return error.InvalidAddress;
-            }
-            return err;
-        };
+    fn connect(self: *ConnectionPool) !std.posix.socket_t {
+        const sock = try std.posix.socket(
+            std.posix.AF.INET,
+            std.posix.SOCK.STREAM,
+            0,
+        );
+        errdefer std.posix.close(sock);
 
-        return std.net.tcpConnectToAddress(addr);
+        const addr = try self.address.toSockaddr();
+        try std.posix.connect(sock, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
+
+        return sock;
     }
 };
 
@@ -248,7 +274,7 @@ pub const ConnectionPool = struct {
 /// RPC server that handles incoming connections
 pub const RpcServer = struct {
     allocator: std.mem.Allocator,
-    listener: ?std.net.Server,
+    socket: ?std.posix.socket_t,
     port: u16,
     running: std.atomic.Value(bool),
     raft_node: ?*raft.RaftNode,
@@ -256,7 +282,7 @@ pub const RpcServer = struct {
     pub fn init(allocator: std.mem.Allocator, port: u16) RpcServer {
         return RpcServer{
             .allocator = allocator,
-            .listener = null,
+            .socket = null,
             .port = port,
             .running = std.atomic.Value(bool).init(false),
             .raft_node = null,
@@ -265,8 +291,8 @@ pub const RpcServer = struct {
 
     pub fn deinit(self: *RpcServer) void {
         self.stop();
-        if (self.listener) |*l| {
-            l.deinit();
+        if (self.socket) |sock| {
+            std.posix.close(sock);
         }
     }
 
@@ -277,10 +303,30 @@ pub const RpcServer = struct {
 
     /// Start the server
     pub fn start(self: *RpcServer) !void {
-        const address = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, self.port);
-        self.listener = try address.listen(.{
-            .reuse_address = true,
-        });
+        // Create socket
+        const sock = try std.posix.socket(
+            std.posix.AF.INET,
+            std.posix.SOCK.STREAM,
+            0,
+        );
+        errdefer std.posix.close(sock);
+
+        // Set SO_REUSEADDR
+        const opt_val: c_int = 1;
+        try std.posix.setsockopt(sock, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, std.mem.asBytes(&opt_val));
+
+        // Bind
+        var addr: std.posix.sockaddr.in = .{
+            .family = std.posix.AF.INET,
+            .port = std.mem.nativeToBig(u16, self.port),
+            .addr = 0, // INADDR_ANY
+        };
+        try std.posix.bind(sock, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
+
+        // Listen
+        try std.posix.listen(sock, 128);
+
+        self.socket = sock;
         self.running.store(true, .release);
     }
 
@@ -291,24 +337,24 @@ pub const RpcServer = struct {
 
     /// Accept and handle one connection (call in a loop)
     pub fn acceptOne(self: *RpcServer) !void {
-        const listener = self.listener orelse return error.NotStarted;
+        const listen_sock = self.socket orelse return error.NotStarted;
 
-        const conn = listener.accept() catch |err| {
+        const client = std.posix.accept(listen_sock, null, null) catch |err| {
             if (err == error.SocketNotListening) return;
             return err;
         };
-        defer conn.stream.close();
+        defer std.posix.close(client);
 
         // Handle messages on this connection
-        try self.handleConnection(conn.stream);
+        try self.handleConnection(client);
     }
 
     /// Handle messages on a connection
-    fn handleConnection(self: *RpcServer, stream: std.net.Stream) !void {
+    fn handleConnection(self: *RpcServer, client: std.posix.socket_t) !void {
         while (self.running.load(.acquire)) {
             // Read header
             var header_buf: [HEADER_SIZE]u8 = undefined;
-            const read = stream.read(&header_buf) catch |err| {
+            const read = std.posix.recv(client, &header_buf, 0) catch |err| {
                 if (err == error.ConnectionResetByPeer or err == error.BrokenPipe) {
                     return;
                 }
@@ -328,7 +374,7 @@ pub const RpcServer = struct {
 
                 var total_read: usize = 0;
                 while (total_read < header.payload_len) {
-                    const n = stream.read(payload[total_read..]) catch {
+                    const n = std.posix.recv(client, payload[total_read..], 0) catch {
                         self.allocator.free(payload);
                         return;
                     };
@@ -347,7 +393,7 @@ pub const RpcServer = struct {
                 defer if (resp.payload.len > 0) self.allocator.free(resp.payload);
                 const encoded = resp.encode(self.allocator) catch continue;
                 defer self.allocator.free(encoded);
-                stream.writeAll(encoded) catch return;
+                _ = std.posix.send(client, encoded, 0) catch return;
             }
         }
     }
@@ -481,20 +527,20 @@ pub const RpcClient = struct {
         const address = self.addresses.get(target) orelse return error.UnknownPeer;
 
         // Get or create connection pool
-        var pool = self.getOrCreatePool(target, address) catch return error.ConnectionFailed;
+        const pool = self.getOrCreatePool(target, address) catch return error.ConnectionFailed;
 
-        const stream = pool.acquire() catch return error.ConnectionFailed;
-        defer pool.release(stream);
+        const sock = pool.acquire() catch return error.ConnectionFailed;
+        defer pool.release(sock);
 
         // Send message
         const encoded = try msg.encode(self.allocator);
         defer self.allocator.free(encoded);
 
-        stream.writeAll(encoded) catch return error.SendFailed;
+        _ = std.posix.send(sock, encoded, 0) catch return error.SendFailed;
 
         // Read response
         var header_buf: [HEADER_SIZE]u8 = undefined;
-        const read = stream.read(&header_buf) catch return error.ReceiveFailed;
+        const read = std.posix.recv(sock, &header_buf, 0) catch return error.ReceiveFailed;
         if (read < HEADER_SIZE) return error.InvalidResponse;
 
         const header = try Message.decodeHeader(&header_buf);
@@ -506,7 +552,7 @@ pub const RpcClient = struct {
 
             var total_read: usize = 0;
             while (total_read < header.payload_len) {
-                const n = stream.read(payload[total_read..]) catch return error.ReceiveFailed;
+                const n = std.posix.recv(sock, payload[total_read..], 0) catch return error.ReceiveFailed;
                 if (n == 0) return error.ConnectionClosed;
                 total_read += n;
             }
@@ -602,4 +648,10 @@ test "node address parsing" {
     const addr = try NodeAddress.parse("127.0.0.1:8080");
     try std.testing.expectEqualStrings("127.0.0.1", addr.host);
     try std.testing.expectEqual(@as(u16, 8080), addr.port);
+}
+
+test "node address to sockaddr" {
+    const addr = try NodeAddress.parse("127.0.0.1:8080");
+    const sockaddr = try addr.toSockaddr();
+    try std.testing.expectEqual(std.posix.AF.INET, sockaddr.family);
 }
