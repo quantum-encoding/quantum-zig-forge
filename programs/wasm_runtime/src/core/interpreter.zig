@@ -592,7 +592,7 @@ pub const Instance = struct {
 
             // Parametric
             .drop => {
-                _ = self.stack.popOrNull();
+                _ = self.stack.pop();
             },
 
             .select, .select_t => {
@@ -606,8 +606,8 @@ pub const Instance = struct {
                 }
 
                 const cond = self.popI32();
-                const val2 = self.stack.popOrNull() orelse return error.StackUnderflow;
-                const val1 = self.stack.popOrNull() orelse return error.StackUnderflow;
+                const val2 = self.stack.pop() orelse return error.StackUnderflow;
+                const val1 = self.stack.pop() orelse return error.StackUnderflow;
 
                 self.stack.append(if (cond != 0) val1 else val2) catch return error.OutOfMemory;
             },
@@ -626,7 +626,7 @@ pub const Instance = struct {
                 if (self.call_stack.items.len == 0) return error.InvalidLocal;
                 const frame = &self.call_stack.items[self.call_stack.items.len - 1];
                 if (idx >= frame.locals.len) return error.InvalidLocal;
-                frame.locals[idx] = self.stack.popOrNull() orelse return error.StackUnderflow;
+                frame.locals[idx] = self.stack.pop() orelse return error.StackUnderflow;
             },
 
             .local_tee => {
@@ -648,7 +648,7 @@ pub const Instance = struct {
                 const idx = reader.readU32() catch return error.UnexpectedEnd;
                 if (idx >= self.globals.len) return error.InvalidGlobal;
                 if (!self.globals[idx].mutable) return error.InvalidGlobal;
-                self.globals[idx].value = self.stack.popOrNull() orelse return error.StackUnderflow;
+                self.globals[idx].value = self.stack.pop() orelse return error.StackUnderflow;
             },
 
             // Memory operations
