@@ -263,10 +263,10 @@ pub const default_bindings = [_]Binding{
     .{ .key = Key.plain('x'), .action = .kill_pane },
 
     // Pane - navigation
-    .{ .key = Key.special(.up), .action = .select_pane_up },
-    .{ .key = Key.special(.down), .action = .select_pane_down },
-    .{ .key = Key.special(.left), .action = .select_pane_left },
-    .{ .key = Key.special(.right), .action = .select_pane_right },
+    .{ .key = Key.specialKey(.up), .action = .select_pane_up },
+    .{ .key = Key.specialKey(.down), .action = .select_pane_down },
+    .{ .key = Key.specialKey(.left), .action = .select_pane_left },
+    .{ .key = Key.specialKey(.right), .action = .select_pane_right },
     .{ .key = Key.plain('o'), .action = .next_pane },
     .{ .key = Key.plain(';'), .action = .prev_pane },
 
