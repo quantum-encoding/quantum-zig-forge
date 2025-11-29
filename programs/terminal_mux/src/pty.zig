@@ -64,12 +64,14 @@ pub const Pty = struct {
             return error.PtyGetSlaveNumFailed;
         };
 
-        // Construct slave path
+        // Construct slave path with null terminator
         var slave_path: [32]u8 = undefined;
+        @memset(&slave_path, 0);
         const path_slice = std.fmt.bufPrint(&slave_path, "/dev/pts/{d}", .{pts_num}) catch {
             return error.PathTooLong;
         };
         const path_len = path_slice.len;
+        slave_path[path_len] = 0; // Ensure null termination
 
         // Open the slave device
         const slave_fd = try posix.open(slave_path[0..path_len :0], .{
