@@ -225,6 +225,28 @@ fn infoCommand(file_path: []const u8) !void {
     std.debug.print("Duration:    {d}:{d:0>5.2}\n", .{ minutes, seconds });
 }
 
+/// Parse EQ preset name to enum
+fn parseEqPreset(name: []const u8) ?lib.EqPreset {
+    const presets = .{
+        .{ "flat", lib.EqPreset.flat },
+        .{ "bass", lib.EqPreset.bass_boost },
+        .{ "treble", lib.EqPreset.treble_boost },
+        .{ "vocal", lib.EqPreset.vocal },
+        .{ "electronic", lib.EqPreset.electronic },
+        .{ "rock", lib.EqPreset.rock },
+        .{ "jazz", lib.EqPreset.jazz },
+        .{ "classical", lib.EqPreset.classical },
+    };
+
+    inline for (presets) |p| {
+        if (std.mem.eql(u8, name, p[0])) {
+            return p[1];
+        }
+    }
+
+    return null;
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -232,4 +254,10 @@ fn infoCommand(file_path: []const u8) !void {
 test "main compiles" {
     // Just verify it compiles
     _ = lib;
+}
+
+test "parse eq preset" {
+    try std.testing.expectEqual(lib.EqPreset.bass_boost, parseEqPreset("bass").?);
+    try std.testing.expectEqual(lib.EqPreset.flat, parseEqPreset("flat").?);
+    try std.testing.expect(parseEqPreset("invalid") == null);
 }
