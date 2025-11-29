@@ -429,8 +429,7 @@ pub const Instance = struct {
         var param_idx: usize = func_type.params.len;
         while (param_idx > 0) {
             param_idx -= 1;
-            if (self.stack.items.len == 0) return error.StackUnderflow;
-            locals[param_idx] = self.stack.pop();
+            locals[param_idx] = self.stack.pop() orelse return error.StackUnderflow;
         }
 
         // Initialize remaining locals to zero
