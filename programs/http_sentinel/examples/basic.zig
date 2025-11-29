@@ -29,7 +29,7 @@ pub fn main() !void {
 fn exampleGet(allocator: std.mem.Allocator) !void {
     std.debug.print("1. Production GET Request\n", .{});
     
-    var client = HttpClient.init(allocator);
+    var client = try HttpClient.init(allocator);
     defer client.deinit();
 
     const headers = [_]std.http.Header{
@@ -50,7 +50,7 @@ fn exampleGet(allocator: std.mem.Allocator) !void {
 fn examplePostJson(allocator: std.mem.Allocator) !void {
     std.debug.print("2. Production POST with JSON\n", .{});
     
-    var client = HttpClient.init(allocator);
+    var client = try HttpClient.init(allocator);
     defer client.deinit();
 
     const headers = [_]std.http.Header{
