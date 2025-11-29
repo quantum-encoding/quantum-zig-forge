@@ -102,11 +102,20 @@ pub const AudioEngine = struct {
         });
         errdefer alsa.deinit();
 
+        // Create DSP graph and EQ
+        const sample_rate_f: f32 = @floatFromInt(config.sample_rate);
+        const dsp_graph = DspGraph.init(sample_rate_f, @intCast(config.channels));
+        const eq = ParametricEq.init(sample_rate_f);
+
         var self = Self{
             .allocator = allocator,
             .config = config,
             .ring_buffer = rb,
             .backend = alsa,
+            .dsp_graph = dsp_graph,
+            .eq = eq,
+            .eq_node = undefined, // Will be initialized below
+            .dsp_enabled = false, // Disabled by default
             .decoder = null,
             .decoder_thread = null,
             .state = std.atomic.Value(State).init(.stopped),
@@ -116,6 +125,10 @@ pub const AudioEngine = struct {
             .total_frames = 0,
             .frames_played = std.atomic.Value(u64).init(0),
         };
+
+        // Initialize EQ processor node (must be done after self is created)
+        self.eq_node = ProcessorNode.init(dsp.parametric_eq.makeProcessor(&self.eq));
+        self.dsp_graph.addProcessor(&self.eq_node);
 
         // Set audio callback
         self.backend.setCallback(audioCallback, &self);
