@@ -562,7 +562,12 @@ pub fn parse(allocator: std.mem.Allocator, data: []const u8) ParseError!Module {
             },
 
             .data => {
-                // Skip for now - complex parsing
+                const count = section_reader.readU32() catch return error.InvalidSection;
+                var i: u32 = 0;
+                while (i < count) : (i += 1) {
+                    const data_entry = parseDataEntry(allocator, &section_reader) catch return error.InvalidData;
+                    datas_list.append(allocator, data_entry) catch return error.OutOfMemory;
+                }
             },
 
             .data_count => {
