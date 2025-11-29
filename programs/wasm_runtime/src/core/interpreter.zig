@@ -390,7 +390,11 @@ pub const Instance = struct {
 
     /// Call a function by index
     pub fn callFunc(self: *Instance, func_idx: u32, args: []const Value) TrapError!?Value {
-        const func_type = self.module.getFuncType(func_idx) orelse return error.InvalidFunction;
+        std.debug.print("[DEBUG] callFunc: func_idx={d}, import_count={d}\n", .{ func_idx, self.module.import_func_count });
+        const func_type = self.module.getFuncType(func_idx) orelse {
+            std.debug.print("[DEBUG] getFuncType returned null for {d}\n", .{func_idx});
+            return error.InvalidFunction;
+        };
 
         // Validate argument count
         if (args.len != func_type.params.len) return error.InvalidFunction;
