@@ -289,7 +289,7 @@ pub const WalRecord = struct {
     record_type: RecordType,
     data: []u8,
 
-    pub fn deinit(self: *WalRecord, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *const WalRecord, allocator: std.mem.Allocator) void {
         allocator.free(self.data);
     }
 };
