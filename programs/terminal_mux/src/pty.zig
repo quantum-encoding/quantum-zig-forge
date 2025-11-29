@@ -115,9 +115,9 @@ pub const Pty = struct {
                 posix.exit(1);
             };
 
-            // Execute the command
-            const err = posix.execvpe(argv[0], argv, envp);
-            _ = err catch {};
+            // Execute the command using libc execvpe via execvpeZ
+            const err = posix.execvpeZ(argv[0], @ptrCast(argv.ptr), envp);
+            _ = err;
             posix.exit(127);
         } else {
             // Parent process
