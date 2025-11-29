@@ -592,6 +592,7 @@ pub fn parse(allocator: std.mem.Allocator, data: []const u8) ParseError!Module {
     module.exports = exports_list.toOwnedSlice(allocator) catch return error.OutOfMemory;
     module.codes = codes_list.toOwnedSlice(allocator) catch return error.OutOfMemory;
     module.custom_sections = custom_list.toOwnedSlice(allocator) catch return error.OutOfMemory;
+    module.datas = datas_list.toOwnedSlice(allocator) catch return error.OutOfMemory;
 
     return module;
 }
