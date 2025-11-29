@@ -1553,27 +1553,27 @@ pub const Instance = struct {
 
     // Stack helpers
     fn popI32(self: *Instance) i32 {
-        const val = self.stack.popOrNull() orelse return 0;
+        const val = self.stack.pop() orelse return 0;
         return val.asI32();
     }
 
     fn popI64(self: *Instance) i64 {
-        const val = self.stack.popOrNull() orelse return 0;
+        const val = self.stack.pop() orelse return 0;
         return val.asI64();
     }
 
     fn popF32(self: *Instance) f32 {
-        const val = self.stack.popOrNull() orelse return 0;
+        const val = self.stack.pop() orelse return 0;
         return val.asF32();
     }
 
     fn popF64(self: *Instance) f64 {
-        const val = self.stack.popOrNull() orelse return 0;
+        const val = self.stack.pop() orelse return 0;
         return val.asF64();
     }
 
     fn pushBool(self: *Instance, b: bool) void {
-        self.stack.append(.{ .i32 = if (b) 1 else 0 }) catch {};
+        self.stack.append(self.allocator, .{ .i32 = if (b) 1 else 0 }) catch {};
     }
 };
 
