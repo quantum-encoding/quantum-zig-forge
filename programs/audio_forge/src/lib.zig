@@ -26,6 +26,13 @@ pub const AlsaBackend = backend.AlsaBackend;
 pub const AlsaConfig = backend.AlsaConfig;
 pub const SampleFormat = backend.SampleFormat;
 
+// DSP types
+pub const DspGraph = dsp.DspGraph;
+pub const Processor = dsp.Processor;
+pub const ProcessorNode = dsp.ProcessorNode;
+pub const BiquadFilter = dsp.BiquadFilter;
+pub const FilterType = dsp.FilterType;
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -36,4 +43,5 @@ test {
     _ = codec.wav;
     _ = backend.alsa;
     _ = engine;
+    _ = dsp;
 }
