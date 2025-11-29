@@ -361,7 +361,6 @@ pub const XRefTable = struct {
             self.trailer.prev = null;
         }
     }
-};
 
     fn parseTrailer(self: *XRefTable, lex: *Lexer, data: []const u8) ParseError!void {
         const obj = Object.parse(lex) catch return error.InvalidTrailer;
