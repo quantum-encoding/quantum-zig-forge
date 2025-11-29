@@ -193,35 +193,18 @@ pub const CorsMiddleware = struct {
     }
 };
 
-/// Rate limiting middleware (simple in-memory)
+/// Rate limiting middleware (placeholder - production would use proper state)
 pub const RateLimitMiddleware = struct {
     const max_requests: u32 = 100;
-    const window_ms: u64 = 60000;
 
-    var request_counts: std.AutoHashMapUnmanaged([4]u8, u32) = .{};
-    var last_reset: u64 = 0;
-
-    pub fn preRequest(ctx: *Context) bool {
-        const now = getTimeNs() / 1_000_000; // Convert to ms
-
-        // Reset counts every window
-        if (now - last_reset > window_ms) {
-            request_counts.clearRetainingCapacity();
-            last_reset = now;
-        }
-
-        // Check rate limit
-        const count = request_counts.get(ctx.client_ip) orelse 0;
-        if (count >= max_requests) {
-            ctx.respond(429, "{\"error\":\"rate limit exceeded\"}", "application/json");
-            return false;
-        }
-
-        // Note: In production this would need proper allocation with allocator
-        // For now, just allow all requests through
-        _ = count;
-        _ = ctx;
-
+    pub fn preRequest(_: *Context) bool {
+        // In production, this would:
+        // 1. Track request counts per client IP in a hash map
+        // 2. Reset counts periodically based on window
+        // 3. Return 429 when limit exceeded
+        //
+        // For now, always allow requests through
+        // A real implementation needs an allocator for the hash map
         return true;
     }
 
