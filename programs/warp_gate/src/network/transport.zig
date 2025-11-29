@@ -457,7 +457,7 @@ pub const HolePuncher = struct {
             try self.transport.connect(self.peer_endpoint);
 
             // Wait and check for response
-            std.time.sleep(self.punch_interval_ms * std.time.ns_per_ms);
+            std.Thread.sleep(self.punch_interval_ms * std.time.ns_per_ms);
 
             // Try to receive
             _ = self.transport.recv() catch {};
