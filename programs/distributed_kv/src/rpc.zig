@@ -349,7 +349,7 @@ pub const RpcServer = struct {
     pub fn acceptOne(self: *RpcServer) !void {
         const listen_sock = self.socket orelse return error.NotStarted;
 
-        const client = std.posix.accept(listen_sock, null, null) catch |err| {
+        const client = std.posix.accept(listen_sock, null, null, 0) catch |err| {
             if (err == error.SocketNotListening) return;
             return err;
         };
