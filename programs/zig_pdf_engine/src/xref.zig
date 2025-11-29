@@ -273,7 +273,7 @@ pub const XRefTable = struct {
             const entry_count = pair[1];
 
             var i: u32 = 0;
-            while (i < count) : (i += 1) {
+            while (i < entry_count) : (i += 1) {
                 if (data_pos + entry_size > xref_data.len) break;
 
                 // Read field 1: type (default 1 if width is 0)
