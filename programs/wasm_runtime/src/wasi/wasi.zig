@@ -219,6 +219,56 @@ pub const WasiInstance = struct {
         return wasi;
     }
 
+    /// Set up the import resolver on the instance
+    /// Must be called after init to wire up WASI imports
+    pub fn setupImports(self: *WasiInstance) void {
+        self.instance.import_resolver = resolveImport;
+        self.instance.import_resolver_ctx = @ptrCast(self);
+    }
+
+    /// Import resolver callback
+    fn resolveImport(
+        ctx: *anyopaque,
+        module_name: []const u8,
+        func_name: []const u8,
+        args: []const Value,
+    ) Instance.TrapError!?Value {
+        const self: *WasiInstance = @ptrCast(@alignCast(ctx));
+
+        // Only handle wasi_snapshot_preview1 and wasi_unstable
+        if (!std.mem.eql(u8, module_name, "wasi_snapshot_preview1") and
+            !std.mem.eql(u8, module_name, "wasi_unstable"))
+        {
+            return error.InvalidFunction;
+        }
+
+        // Dispatch to WASI functions
+        if (std.mem.eql(u8, func_name, "fd_write")) {
+            return self.fdWrite(args);
+        } else if (std.mem.eql(u8, func_name, "fd_read")) {
+            return self.fdRead(args);
+        } else if (std.mem.eql(u8, func_name, "fd_close")) {
+            return self.fdClose(args);
+        } else if (std.mem.eql(u8, func_name, "proc_exit")) {
+            return self.procExit(args);
+        } else if (std.mem.eql(u8, func_name, "args_sizes_get")) {
+            return self.argsSizesGet(args);
+        } else if (std.mem.eql(u8, func_name, "args_get")) {
+            return self.argsGet(args);
+        } else if (std.mem.eql(u8, func_name, "environ_sizes_get")) {
+            return self.environSizesGet(args);
+        } else if (std.mem.eql(u8, func_name, "environ_get")) {
+            return self.environGet(args);
+        } else if (std.mem.eql(u8, func_name, "clock_time_get")) {
+            return self.clockTimeGet(args);
+        } else if (std.mem.eql(u8, func_name, "random_get")) {
+            return self.randomGet(args);
+        }
+
+        // Unknown WASI function - return ENOSYS
+        return .{ .i32 = @intFromEnum(Errno.nosys) };
+    }
+
     pub fn deinit(self: *WasiInstance) void {
         // Close preopened directories (skip stdin/stdout/stderr)
         if (self.fds.items.len > 3) {
