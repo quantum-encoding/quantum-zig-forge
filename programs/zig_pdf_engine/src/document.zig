@@ -309,85 +309,92 @@ pub const Document = struct {
 
     /// Resolve an object from an object stream
     fn resolveCompressedObject(self: *Document, stream_obj_num: u32, obj_index: u16) !Object {
-        // Get the object stream itself (must be uncompressed)
-        const stream_entry = self.xref_table.getEntry(stream_obj_num) orelse return error.ObjectNotFound;
-        if (stream_entry.compressed) return error.InvalidObject; // Object streams can't be nested
+        // Check cache first
+        const cached_data = self.objstm_cache.get(stream_obj_num) orelse blk: {
+            // Not cached - decompress and cache the object stream
+            const stream_entry = self.xref_table.getEntry(stream_obj_num) orelse return error.ObjectNotFound;
+            if (stream_entry.compressed) return error.InvalidObject; // Object streams can't be nested
 
-        var lex = Lexer.initAt(self.data, @intCast(stream_entry.offset));
+            var lex = Lexer.initAt(self.data, @intCast(stream_entry.offset));
 
-        // Skip "obj_num gen_num obj"
-        _ = lex.next(); // obj_num
-        _ = lex.next(); // gen_num
-        _ = lex.next(); // obj
+            // Skip "obj_num gen_num obj"
+            _ = lex.next(); // obj_num
+            _ = lex.next(); // gen_num
+            _ = lex.next(); // obj
 
-        const stream_obj = Object.parse(&lex) catch return error.InvalidObject;
+            const stream_obj = Object.parse(&lex) catch return error.InvalidObject;
 
-        switch (stream_obj) {
-            .stream => |stream| {
-                return self.extractFromObjectStream(stream.dict, stream.data, obj_index);
-            },
-            else => return error.InvalidObject,
-        }
-    }
-
-    /// Extract an object from object stream data
-    fn extractFromObjectStream(self: *Document, dict_bytes: []const u8, stream_data: []const u8, obj_index: u16) !Object {
-        var parser = DictParser.init(dict_bytes);
-
-        // Verify /Type /ObjStm
-        if (parser.get("Type")) |type_obj| {
-            const type_name = type_obj.asName() orelse return error.InvalidObject;
-            if (!std.mem.eql(u8, type_name, "ObjStm")) return error.InvalidObject;
-        }
-
-        // /N - number of objects in stream
-        const n_obj = parser.get("N") orelse return error.InvalidObject;
-        const n: u32 = @intCast(n_obj.asInt() orelse return error.InvalidObject);
-
-        if (obj_index >= n) return error.ObjectNotFound;
-
-        // /First - byte offset of first object data
-        const first_obj = parser.get("First") orelse return error.InvalidObject;
-        const first: usize = @intCast(first_obj.asInt() orelse return error.InvalidObject);
-
-        // Decompress stream if needed
-        var decompressed: ?[]u8 = null;
-        defer if (decompressed) |d| self.allocator.free(d);
-
-        const data = blk: {
-            if (parser.get("Filter")) |filter_obj| {
-                const filter_name = filter_obj.asName() orelse break :blk stream_data;
-                if (std.mem.eql(u8, filter_name, "FlateDecode")) {
-                    decompressed = filters.FlateDecode.decode(self.allocator, stream_data) catch return error.InvalidObject;
-                    break :blk decompressed.?;
-                }
+            switch (stream_obj) {
+                .stream => |stream| {
+                    // Decompress and cache
+                    const decompressed = try self.decompressAndCacheObjStm(stream_obj_num, stream.dict, stream.data);
+                    break :blk decompressed;
+                },
+                else => return error.InvalidObject,
             }
-            break :blk stream_data;
         };
 
-        // Parse the header: pairs of (obj_num, offset) for each object
-        // The offsets are relative to /First
-        var header_lex = Lexer.init(data[0..first]);
-        var target_offset: usize = 0;
-        var found = false;
+        // Now extract the object from the cached decompressed data
+        return self.extractFromCachedObjStm(cached_data, obj_index);
+    }
 
-        var i: u32 = 0;
-        while (i < n) : (i += 1) {
+    /// Decompress object stream and add to cache
+    fn decompressAndCacheObjStm(self: *Document, stream_obj_num: u32, dict_bytes: []const u8, stream_data: []const u8) ![]u8 {
+        var parser = DictParser.init(dict_bytes);
+
+        // Decompress if filtered
+        const data = blk: {
+            if (parser.get("Filter")) |filter_obj| {
+                const filter_name = filter_obj.asName() orelse break :blk try self.allocator.dupe(u8, stream_data);
+                if (std.mem.eql(u8, filter_name, "FlateDecode")) {
+                    break :blk filters.FlateDecode.decode(self.allocator, stream_data) catch return error.InvalidObject;
+                }
+            }
+            break :blk try self.allocator.dupe(u8, stream_data);
+        };
+
+        // Store in cache
+        try self.objstm_cache.put(stream_obj_num, data);
+        return data;
+    }
+
+    /// Extract an object from cached object stream data
+    fn extractFromCachedObjStm(self: *Document, data: []const u8, obj_index: u16) !Object {
+        _ = self;
+
+        // First, we need to find /N and /First from the original stream dict
+        // But we don't have it here... We need to parse the header to find the object
+
+        // Object stream format: "obj1_num obj1_off obj2_num obj2_off ... [actual objects starting at /First]"
+        // We need to scan the header to find our object
+
+        var header_lex = Lexer.init(data);
+        var obj_offsets = std.ArrayList(struct { num: u32, off: usize }).empty;
+        defer obj_offsets.deinit(self.allocator);
+
+        // Read all object number/offset pairs until we hit a non-number
+        while (true) {
             const num_tok = header_lex.next() orelse break;
-            const off_tok = header_lex.next() orelse break;
-
-            if (num_tok.tag != .number or off_tok.tag != .number) break;
-
-            if (i == obj_index) {
-                target_offset = @intCast(off_tok.asInt() orelse 0);
-                found = true;
+            if (num_tok.tag != .number) {
+                // We've hit the first object - this is where /First points
                 break;
             }
+            const off_tok = header_lex.next() orelse break;
+            if (off_tok.tag != .number) break;
+
+            try obj_offsets.append(self.allocator, .{
+                .num = @intCast(num_tok.asInt() orelse 0),
+                .off = @intCast(off_tok.asInt() orelse 0),
+            });
         }
 
-        if (!found) return error.ObjectNotFound;
+        if (obj_index >= obj_offsets.items.len) return error.ObjectNotFound;
 
-        // Parse the object at the computed offset
+        // Calculate where objects start (after the header)
+        // The header ends at the current lexer position minus the last token length
+        const first = header_lex.getPosition();
+        const target_offset = obj_offsets.items[obj_index].off;
+
         const obj_start = first + target_offset;
         if (obj_start >= data.len) return error.InvalidObject;
 
