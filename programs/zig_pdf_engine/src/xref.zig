@@ -165,14 +165,203 @@ pub const XRefTable = struct {
     }
 
     fn parseXrefStream(self: *XRefTable, lex: *Lexer, data: []const u8, first_token: Token) ParseError!void {
-        // xref stream: "obj_num gen_num obj << ... >> stream ... endstream endobj"
-        _ = self;
-        _ = first_token;
-        _ = lex;
-        _ = data;
-        // TODO: Implement xref stream parsing for PDF 1.5+
-        return error.XrefStreamNotImplemented;
+        // xref stream format: "obj_num gen_num obj << /Type /XRef /Size N /W [w1 w2 w3] /Index [start count ...] >> stream ... endstream endobj"
+        _ = first_token; // Already consumed (the object number)
+
+        // Skip generation number
+        const gen_tok = lex.next() orelse return error.UnexpectedEof;
+        if (gen_tok.tag != .number) return error.InvalidXref;
+
+        // Skip "obj" keyword
+        const obj_tok = lex.next() orelse return error.UnexpectedEof;
+        if (obj_tok.tag != .keyword_obj) return error.InvalidXref;
+
+        // Parse the stream object (dictionary + stream data)
+        const obj = Object.parse(lex) catch return error.InvalidXrefStream;
+
+        switch (obj) {
+            .stream => |stream| {
+                try self.parseXrefStreamContents(stream.dict, stream.data, data);
+            },
+            else => return error.InvalidXrefStream,
+        }
     }
+
+    fn parseXrefStreamContents(self: *XRefTable, dict_bytes: []const u8, stream_data: []const u8, full_data: []const u8) ParseError!void {
+        var parser = DictParser.init(dict_bytes);
+
+        // Verify /Type /XRef (optional but should be present)
+        if (parser.get("Type")) |type_obj| {
+            const type_name = type_obj.asName() orelse return error.InvalidXrefStream;
+            if (!std.mem.eql(u8, type_name, "XRef")) return error.InvalidXrefStream;
+        }
+
+        // /Size (required) - total number of objects
+        const size_obj = parser.get("Size") orelse return error.MissingTrailerSize;
+        const size_val: u32 = @intCast(size_obj.asInt() orelse return error.InvalidTrailerSize);
+
+        // /W (required) - array of 3 integers specifying field widths
+        const w_obj = parser.get("W") orelse return error.InvalidXrefStreamW;
+        var w_widths: [3]u8 = undefined;
+        switch (w_obj) {
+            .array => |arr_bytes| {
+                var arr_lex = Lexer.init(arr_bytes);
+                var idx: usize = 0;
+                while (arr_lex.next()) |tok| {
+                    if (idx >= 3) break;
+                    if (tok.tag == .number) {
+                        w_widths[idx] = @intCast(tok.asInt() orelse 0);
+                        idx += 1;
+                    }
+                }
+                if (idx != 3) return error.InvalidXrefStreamW;
+            },
+            else => return error.InvalidXrefStreamW,
+        }
+
+        // /Index (optional) - array of pairs [start count start count ...]
+        // Default is [0 Size]
+        var index_pairs = std.ArrayList([2]u32).empty;
+        defer index_pairs.deinit(self.allocator);
+
+        if (parser.get("Index")) |index_obj| {
+            switch (index_obj) {
+                .array => |arr_bytes| {
+                    var arr_lex = Lexer.init(arr_bytes);
+                    var nums: [2]u32 = undefined;
+                    var num_idx: usize = 0;
+
+                    while (arr_lex.next()) |tok| {
+                        if (tok.tag == .number) {
+                            nums[num_idx] = @intCast(tok.asInt() orelse 0);
+                            num_idx += 1;
+                            if (num_idx == 2) {
+                                try index_pairs.append(self.allocator, nums);
+                                num_idx = 0;
+                            }
+                        }
+                    }
+                },
+                else => return error.InvalidXrefStreamIndex,
+            }
+        } else {
+            // Default: [0 Size]
+            try index_pairs.append(self.allocator, .{ 0, size_val });
+        }
+
+        // Decompress stream data if filtered
+        var decompressed: ?[]u8 = null;
+        defer if (decompressed) |d| self.allocator.free(d);
+
+        const xref_data = blk: {
+            if (parser.get("Filter")) |filter_obj| {
+                const filter_name = filter_obj.asName() orelse break :blk stream_data;
+                if (std.mem.eql(u8, filter_name, "FlateDecode")) {
+                    decompressed = filters.FlateDecode.decode(self.allocator, stream_data) catch return error.XrefDecompressFailed;
+                    break :blk decompressed.?;
+                }
+            }
+            break :blk stream_data;
+        };
+
+        // Parse the binary xref entries
+        const entry_size = @as(usize, w_widths[0]) + w_widths[1] + w_widths[2];
+        var data_pos: usize = 0;
+
+        for (index_pairs.items) |pair| {
+            const start_obj = pair[0];
+            const count = pair[1];
+
+            var i: u32 = 0;
+            while (i < count) : (i += 1) {
+                if (data_pos + entry_size > xref_data.len) break;
+
+                // Read field 1: type (default 1 if width is 0)
+                const field1 = readXrefField(xref_data[data_pos..], w_widths[0]);
+                data_pos += w_widths[0];
+
+                // Read field 2: depends on type
+                const field2 = readXrefField(xref_data[data_pos..], w_widths[1]);
+                data_pos += w_widths[1];
+
+                // Read field 3: depends on type
+                const field3 = readXrefField(xref_data[data_pos..], w_widths[2]);
+                data_pos += w_widths[2];
+
+                const obj_num = start_obj + i;
+                const entry_type: u8 = if (w_widths[0] == 0) 1 else @intCast(field1);
+
+                switch (entry_type) {
+                    0 => {
+                        // Free object: field2 = next free object, field3 = generation
+                        try self.entries.put(obj_num, .{
+                            .offset = 0,
+                            .gen_num = @intCast(field3),
+                            .in_use = false,
+                            .compressed = false,
+                            .stream_obj = 0,
+                            .stream_idx = 0,
+                        });
+                    },
+                    1 => {
+                        // Uncompressed object: field2 = offset, field3 = generation
+                        try self.entries.put(obj_num, .{
+                            .offset = field2,
+                            .gen_num = @intCast(field3),
+                            .in_use = true,
+                            .compressed = false,
+                            .stream_obj = 0,
+                            .stream_idx = 0,
+                        });
+                    },
+                    2 => {
+                        // Compressed object: field2 = object stream number, field3 = index in stream
+                        try self.entries.put(obj_num, .{
+                            .offset = 0,
+                            .gen_num = 0,
+                            .in_use = true,
+                            .compressed = true,
+                            .stream_obj = @intCast(field2),
+                            .stream_idx = @intCast(field3),
+                        });
+                    },
+                    else => {
+                        // Unknown type - skip
+                    },
+                }
+            }
+        }
+
+        // Store trailer info from stream dictionary
+        self.trailer.size = size_val;
+
+        // /Root (required)
+        const root_obj = parser.get("Root") orelse return error.MissingTrailerRoot;
+        self.trailer.root = root_obj.asRef() orelse return error.InvalidTrailerRoot;
+
+        // /Info (optional)
+        self.trailer.info = if (parser.get("Info")) |info_obj| info_obj.asRef() else null;
+
+        // /Encrypt (optional)
+        self.trailer.encrypt = if (parser.get("Encrypt")) |enc_obj| enc_obj.asRef() else null;
+
+        // /ID (optional)
+        self.trailer.id = null; // TODO: parse ID array
+
+        // /Prev (optional - for incremental updates)
+        if (parser.get("Prev")) |prev_obj| {
+            const prev_offset: u64 = @intCast(prev_obj.asInt() orelse 0);
+            if (prev_offset > 0) {
+                self.trailer.prev = prev_offset;
+                try self.parseXrefAt(full_data, prev_offset);
+            } else {
+                self.trailer.prev = null;
+            }
+        } else {
+            self.trailer.prev = null;
+        }
+    }
+};
 
     fn parseTrailer(self: *XRefTable, lex: *Lexer, data: []const u8) ParseError!void {
         const obj = Object.parse(lex) catch return error.InvalidTrailer;
