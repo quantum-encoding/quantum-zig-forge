@@ -401,7 +401,7 @@ pub const Instance = struct {
         var frame = try self.createFrame(func_idx, func_type, code);
         errdefer frame.deinit();
 
-        self.call_stack.append(frame) catch return error.OutOfMemory;
+        self.call_stack.append(self.allocator, frame) catch return error.OutOfMemory;
 
         // Execute
         try self.execute(code.body);
