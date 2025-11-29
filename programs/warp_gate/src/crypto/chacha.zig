@@ -143,9 +143,11 @@ pub fn decryptWithSeq(
 
 /// Securely zero memory
 pub fn secureZero(buf: []u8) void {
-    @memset(buf, 0);
-    // Compiler fence to prevent optimization
-    std.atomic.compilerFence(.seq_cst);
+    // Use volatile memset to prevent optimization
+    const ptr: [*]volatile u8 = @ptrCast(buf.ptr);
+    for (0..buf.len) |i| {
+        ptr[i] = 0;
+    }
 }
 
 /// X25519 key exchange for establishing shared secret
