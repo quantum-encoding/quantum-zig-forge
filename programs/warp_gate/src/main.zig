@@ -273,13 +273,12 @@ fn cmdStatus(allocator: std.mem.Allocator) !void {
     print("  Querying STUN servers...\n", .{});
 
     if (resolver.queryStun()) |endpoint| {
-        const addr = endpoint.address;
         print("  \x1b[32m✓\x1b[0m Public IP: {d}.{d}.{d}.{d}:{d}\n", .{
-            addr.in.sa.addr[0],
-            addr.in.sa.addr[1],
-            addr.in.sa.addr[2],
-            addr.in.sa.addr[3],
-            addr.in.sa.port,
+            endpoint.addr[0],
+            endpoint.addr[1],
+            endpoint.addr[2],
+            endpoint.addr[3],
+            endpoint.port,
         });
     } else |err| {
         print("  \x1b[31m✗\x1b[0m STUN query failed: {}\n", .{err});
