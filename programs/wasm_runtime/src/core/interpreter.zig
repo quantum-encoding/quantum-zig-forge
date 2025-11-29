@@ -1480,11 +1480,11 @@ pub const Instance = struct {
             // For loop, jump back to start
             reader.pos = label.target_ip;
             // Re-push the label for the loop
-            self.labels.append(label) catch return error.OutOfMemory;
+            self.labels.append(self.allocator, label) catch return error.OutOfMemory;
         } else {
             // For block/if, skip to end
             try self.skipToEnd(reader);
-            _ = self.labels.popOrNull();
+            _ = self.labels.pop();
         }
     }
 
