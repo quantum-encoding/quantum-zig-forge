@@ -193,21 +193,21 @@ pub const WasiInstance = struct {
             .fds = .empty,
         };
 
-        // Set up standard FDs (use posix file descriptors directly)
+        // Set up standard FDs
         try wasi.fds.append(allocator, .{
-            .file = if (config.stdin) |f| f else std.posix.STDIN_FILENO,
+            .file = config.stdin orelse std.fs.File.stdin(),
             .preopen_path = null,
             .rights = .{ .fd_read = true },
             .fdflags = 0,
         });
         try wasi.fds.append(allocator, .{
-            .file = if (config.stdout) |f| f else std.posix.STDOUT_FILENO,
+            .file = config.stdout orelse std.fs.File.stdout(),
             .preopen_path = null,
             .rights = .{ .fd_write = true },
             .fdflags = 0,
         });
         try wasi.fds.append(allocator, .{
-            .file = if (config.stderr) |f| f else std.posix.STDERR_FILENO,
+            .file = config.stderr orelse std.fs.File.stderr(),
             .preopen_path = null,
             .rights = .{ .fd_write = true },
             .fdflags = 0,
