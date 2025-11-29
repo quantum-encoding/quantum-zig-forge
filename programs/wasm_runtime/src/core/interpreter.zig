@@ -388,14 +388,9 @@ pub const Instance = struct {
         return self.callFunc(exp.desc.idx, args);
     }
 
-    /// Call a function by index
+    /// Call a function by index (external API - pushes args to stack)
     pub fn callFunc(self: *Instance, func_idx: u32, args: []const Value) TrapError!?Value {
-        std.debug.print("[DEBUG] callFunc: func_idx={d}, import_count={d}, args.len={d}\n", .{ func_idx, self.module.import_func_count, args.len });
-        const func_type = self.module.getFuncType(func_idx) orelse {
-            std.debug.print("[DEBUG] getFuncType returned null for {d}\n", .{func_idx});
-            return error.InvalidFunction;
-        };
-        std.debug.print("[DEBUG] func_type.params.len={d}\n", .{func_type.params.len});
+        const func_type = self.module.getFuncType(func_idx) orelse return error.InvalidFunction;
 
         // Validate argument count
         if (args.len != func_type.params.len) return error.InvalidFunction;
@@ -405,20 +400,22 @@ pub const Instance = struct {
             self.stack.append(self.allocator, arg) catch return error.OutOfMemory;
         }
 
+        // Execute internal call
+        return self.callFuncInternal(func_idx);
+    }
+
+    /// Internal function call - assumes args already on stack
+    fn callFuncInternal(self: *Instance, func_idx: u32) TrapError!?Value {
+        const func_type = self.module.getFuncType(func_idx) orelse return error.InvalidFunction;
+
         // Check if import or defined
-        std.debug.print("[DEBUG] Checking: func_idx={d} < import_count={d} => {}\n", .{ func_idx, self.module.import_func_count, func_idx < self.module.import_func_count });
         if (func_idx < self.module.import_func_count) {
             // Import function - use import resolver
-            std.debug.print("[DEBUG] Import call: func_idx={d}, import_resolver={any}\n", .{ func_idx, self.import_resolver });
             if (self.import_resolver) |resolver| {
                 // Get import info
-                const import = self.module.getImport(func_idx) orelse {
-                    std.debug.print("[DEBUG] getImport returned null\n", .{});
-                    return error.InvalidFunction;
-                };
-                std.debug.print("[DEBUG] Calling import: {s}.{s}\n", .{ import.module, import.name });
+                const import = self.module.getImport(func_idx) orelse return error.InvalidFunction;
 
-                // Pop args back from stack for the resolver
+                // Pop args from stack for the resolver
                 var call_args = self.allocator.alloc(Value, func_type.params.len) catch return error.OutOfMemory;
                 defer self.allocator.free(call_args);
 
