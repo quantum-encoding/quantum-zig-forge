@@ -201,6 +201,15 @@ pub const PageTree = struct {
     xref_getter: *const fn (u32) ?u64,
     page_refs: std.ArrayList(ObjectRef),
 
+    /// Explicit error set to avoid recursive inference
+    pub const TraverseError = error{
+        ObjectNotFound,
+        UnexpectedEof,
+        InvalidObject,
+        InvalidDict,
+        OutOfMemory,
+    };
+
     pub fn init(allocator: std.mem.Allocator, doc_data: []const u8, xref_getter: *const fn (u32) ?u64) PageTree {
         return .{
             .doc_data = doc_data,
@@ -215,11 +224,11 @@ pub const PageTree = struct {
     }
 
     /// Build flat list of page references from tree
-    pub fn buildPageList(self: *PageTree, root_ref: ObjectRef) !void {
+    pub fn buildPageList(self: *PageTree, root_ref: ObjectRef) TraverseError!void {
         try self.traverseNode(root_ref);
     }
 
-    fn traverseNode(self: *PageTree, ref: ObjectRef) !void {
+    fn traverseNode(self: *PageTree, ref: ObjectRef) TraverseError!void {
         const offset = self.xref_getter(ref.obj_num) orelse return error.ObjectNotFound;
 
         var lex = Lexer.initAt(self.doc_data, @intCast(offset));
