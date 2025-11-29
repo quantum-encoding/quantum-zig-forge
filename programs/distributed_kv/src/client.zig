@@ -448,7 +448,7 @@ pub const Client = struct {
 
             // Backoff before retry
             const backoff = self.config.retry_backoff_ms * (@as(u64, 1) << @intCast(retries));
-            std.posix.nanosleep(0,backoff * std.time.ns_per_ms);
+            std.posix.nanosleep(0, backoff * 1_000_000);
         }
 
         return last_error orelse ClientError.AllNodesFailed;
