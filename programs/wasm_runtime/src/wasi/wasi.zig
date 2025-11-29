@@ -528,7 +528,7 @@ pub const WasiInstance = struct {
         mem.storeI32(count_ptr, @intCast(self.config.env.len)) catch {
             return .{ .i32 = @intFromEnum(Errno.fault) };
         };
-        mem.storeI32(buf_size_ptr, buf_size) catch {
+        mem.storeI32(buf_size_ptr, @intCast(buf_size)) catch {
             return .{ .i32 = @intFromEnum(Errno.fault) };
         };
 
