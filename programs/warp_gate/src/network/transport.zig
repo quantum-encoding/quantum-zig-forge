@@ -13,7 +13,6 @@
 
 const std = @import("std");
 const posix = std.posix;
-const net = std.Io.net;
 
 pub const MAX_PACKET_SIZE: usize = 1400; // MTU-safe
 pub const HEADER_SIZE: usize = 16;
