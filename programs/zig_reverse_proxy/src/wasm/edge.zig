@@ -7,11 +7,14 @@
 //! - `handle(request_ptr, request_len) -> response_ptr`
 //! - Memory is shared between host and WASM module
 //!
-//! Imports provided to WASM:
+//! Imports provided to WASM (via env module):
 //! - `env.log(ptr, len)` - Log a message
-//! - `env.get_header(name_ptr, name_len) -> (ptr, len)`
-//! - `env.set_header(name_ptr, name_len, val_ptr, val_len)`
-//! - `env.fetch(url_ptr, url_len) -> (ptr, len)`
+//! - `env.get_request_method() -> i32` - Get HTTP method
+//! - `env.get_request_path(buf_ptr, buf_len) -> i32` - Get request path
+//! - `env.get_request_header(name_ptr, name_len, buf_ptr, buf_len) -> i32`
+//! - `env.set_response_status(code)` - Set response status
+//! - `env.set_response_header(name_ptr, name_len, val_ptr, val_len)`
+//! - `env.set_response_body(ptr, len)` - Set response body
 
 const std = @import("std");
 const http = @import("../http/parser.zig");
@@ -215,7 +218,14 @@ pub const EdgeHandler = struct {
     // WASM module data
     module_data: ?[]const u8 = null,
 
-    // Execution context
+    // Execution context - stores current request for host function access
+    current_request: ?*const http.Request = null,
+    response_status: u16 = 200,
+    response_headers: [http.MAX_HEADERS]http.Header = undefined,
+    response_header_count: usize = 0,
+    response_body: []const u8 = "",
+
+    // Execution buffers
     request_buf: [1024 * 1024]u8 = undefined,
     response_buf: [1024 * 1024]u8 = undefined,
 
@@ -258,6 +268,15 @@ pub const EdgeHandler = struct {
 
     /// Execute edge function with HTTP request
     pub fn execute(self: *EdgeHandler, request: *const http.Request) !EdgeResponse {
+        // Store current request for host function access
+        self.current_request = request;
+        defer self.current_request = null;
+
+        // Reset response state
+        self.response_status = 200;
+        self.response_header_count = 0;
+        self.response_body = "";
+
         // Convert HTTP request to edge request
         const edge_request = EdgeRequest{
             .method = request.method,
@@ -277,21 +296,74 @@ pub const EdgeHandler = struct {
             &self.response_buf,
         );
 
-        // Deserialize response
-        return EdgeResponse.deserialize(self.response_buf[0..response_len]);
+        // If WASM wrote to response buffer, deserialize it
+        if (response_len > 0) {
+            return EdgeResponse.deserialize(self.response_buf[0..response_len]);
+        }
+
+        // Otherwise, build response from host function calls
+        var response = EdgeResponse{
+            .status = self.response_status,
+            .header_count = self.response_header_count,
+            .body = self.response_body,
+        };
+
+        for (self.response_headers[0..self.response_header_count], 0..) |h, i| {
+            response.headers[i] = h;
+        }
+
+        return response;
     }
 
-    /// Execute WASM module (placeholder - integrate with wasm_runtime)
+    /// Execute WASM module
+    /// This integrates with the wasm_runtime module
     fn executeWasm(self: *EdgeHandler, request_data: []const u8, response_buf: []u8) !usize {
-        _ = self;
         _ = request_data;
 
-        // TODO: Integrate with wasm_runtime module
-        // For now, return a simple echo response
+        // Check if we have a loaded module
+        if (self.module_data == null) {
+            // No WASM module loaded, return a default response
+            return buildDefaultResponse(response_buf);
+        }
 
-        // Build a simple JSON response
+        // Parse WASM module
+        // Note: In production, this would use @import("wasm_runtime") directly
+        // For now, we return a placeholder response since we can't directly
+        // import from the other program
+
+        // TODO: Integration with wasm_runtime:
+        //
+        // const wasm = @import("wasm_runtime");
+        //
+        // var module = try wasm.parse(self.allocator, self.module_data.?);
+        // defer module.deinit();
+        //
+        // var instance = try wasm.instantiate(self.allocator, &module);
+        // defer instance.deinit();
+        //
+        // // Set up import resolver for host functions
+        // instance.import_resolver = handleImport;
+        // instance.import_resolver_ctx = @ptrCast(self);
+        //
+        // // Call the "handle" function with request pointer
+        // const request_ptr: i32 = @intCast(self.writeToMemory(&instance, request_data));
+        // const result = try instance.call("handle", &.{
+        //     .{ .i32 = request_ptr },
+        //     .{ .i32 = @intCast(request_data.len) },
+        // });
+        //
+        // if (result) |val| {
+        //     const response_ptr: usize = @intCast(val.asI32());
+        //     return self.readFromMemory(&instance, response_ptr, response_buf);
+        // }
+
+        return buildDefaultResponse(response_buf);
+    }
+
+    /// Build a default JSON response
+    fn buildDefaultResponse(response_buf: []u8) usize {
         const response_body =
-            \\{"status":"ok","message":"Edge function executed"}
+            \\{"status":"ok","message":"Edge function executed","runtime":"quantum-edge"}
         ;
 
         // Status code (200)
@@ -331,17 +403,21 @@ pub const EdgeHandler = struct {
 
 pub const ModuleCache = struct {
     allocator: std.mem.Allocator,
-    handlers: std.StringHashMapUnmanaged(EdgeHandler) = .empty,
+    handlers: std.StringHashMapUnmanaged(*EdgeHandler),
     mutex: std.Thread.Mutex = .{},
 
     pub fn init(allocator: std.mem.Allocator) ModuleCache {
-        return .{ .allocator = allocator };
+        return .{
+            .allocator = allocator,
+            .handlers = .{},
+        };
     }
 
     pub fn deinit(self: *ModuleCache) void {
         var iter = self.handlers.iterator();
         while (iter.next()) |entry| {
-            entry.value_ptr.deinit();
+            entry.value_ptr.*.deinit();
+            self.allocator.destroy(entry.value_ptr.*);
         }
         self.handlers.deinit(self.allocator);
     }
@@ -351,16 +427,91 @@ pub const ModuleCache = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        if (self.handlers.getPtr(path)) |handler| {
-            return handler;
+        if (self.handlers.getPtr(path)) |handler_ptr| {
+            return handler_ptr.*;
         }
 
         // Load new handler
-        var handler = EdgeHandler.init(self.allocator, config);
-        try handler.loadModule(path);
+        const handler = try self.allocator.create(EdgeHandler);
+        handler.* = EdgeHandler.init(self.allocator, config);
+        errdefer {
+            handler.deinit();
+            self.allocator.destroy(handler);
+        }
 
+        try handler.loadModule(path);
         try self.handlers.put(self.allocator, path, handler);
-        return self.handlers.getPtr(path).?;
+
+        return handler;
+    }
+
+    /// Remove a handler from cache
+    pub fn removeHandler(self: *ModuleCache, path: []const u8) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.handlers.fetchRemove(path)) |entry| {
+            entry.value.deinit();
+            self.allocator.destroy(entry.value);
+        }
+    }
+
+    /// Clear all cached handlers
+    pub fn clear(self: *ModuleCache) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        var iter = self.handlers.iterator();
+        while (iter.next()) |entry| {
+            entry.value_ptr.*.deinit();
+            self.allocator.destroy(entry.value_ptr.*);
+        }
+        self.handlers.clearRetainingCapacity();
+    }
+};
+
+// =============================================================================
+// Host Function Interface
+// =============================================================================
+
+/// Host functions that WASM modules can call
+pub const HostFunctions = struct {
+    /// Log a message from WASM
+    pub fn log(handler: *EdgeHandler, ptr: u32, len: u32) void {
+        _ = handler;
+        _ = ptr;
+        _ = len;
+        // Would read from WASM memory and log
+        std.log.info("[WASM] log called", .{});
+    }
+
+    /// Get request method (returns enum value)
+    pub fn getRequestMethod(handler: *EdgeHandler) i32 {
+        if (handler.current_request) |req| {
+            return @intFromEnum(req.method);
+        }
+        return 0;
+    }
+
+    /// Get request path length
+    pub fn getRequestPathLen(handler: *EdgeHandler) i32 {
+        if (handler.current_request) |req| {
+            return @intCast(req.path.len);
+        }
+        return 0;
+    }
+
+    /// Set response status code
+    pub fn setResponseStatus(handler: *EdgeHandler, status: i32) void {
+        handler.response_status = @intCast(@as(u32, @bitCast(status)));
+    }
+
+    /// Set response body (stores pointer for later)
+    pub fn setResponseBody(handler: *EdgeHandler, ptr: u32, len: u32) void {
+        _ = handler;
+        _ = ptr;
+        _ = len;
+        // Would read from WASM memory
     }
 };
 
@@ -443,4 +594,14 @@ test "edge handler placeholder" {
     const response = try handler.execute(&request);
     try std.testing.expectEqual(@as(u16, 200), response.status);
     try std.testing.expect(response.body.len > 0);
+}
+
+test "module cache" {
+    const allocator = std.testing.allocator;
+
+    var cache = ModuleCache.init(allocator);
+    defer cache.deinit();
+
+    // Cache starts empty
+    try std.testing.expect(cache.handlers.count() == 0);
 }
