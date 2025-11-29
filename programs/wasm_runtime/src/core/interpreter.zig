@@ -486,7 +486,7 @@ pub const Instance = struct {
 
             .block => {
                 _ = reader.readBlockType() catch return error.UnexpectedEnd;
-                self.labels.append(.{
+                self.labels.append(self.allocator, .{
                     .opcode = .block,
                     .stack_height = self.stack.items.len,
                     .target_ip = 0, // Will be set when we find end
@@ -496,7 +496,7 @@ pub const Instance = struct {
 
             .loop => {
                 _ = reader.readBlockType() catch return error.UnexpectedEnd;
-                self.labels.append(.{
+                self.labels.append(self.allocator, .{
                     .opcode = .loop,
                     .stack_height = self.stack.items.len,
                     .target_ip = reader.pos,
@@ -511,7 +511,7 @@ pub const Instance = struct {
                     // Skip to else or end
                     try self.skipToElseOrEnd(reader);
                 }
-                self.labels.append(.{
+                self.labels.append(self.allocator, .{
                     .opcode = .@"if",
                     .stack_height = self.stack.items.len,
                     .target_ip = 0,
