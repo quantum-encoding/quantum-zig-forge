@@ -217,9 +217,10 @@ pub const RateLimitMiddleware = struct {
             return false;
         }
 
-        // Note: In production this would need proper allocation
-        // request_counts.put(ctx.client_ip, count + 1);
+        // Note: In production this would need proper allocation with allocator
+        // For now, just allow all requests through
         _ = count;
+        _ = ctx;
 
         return true;
     }
