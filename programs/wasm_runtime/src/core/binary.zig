@@ -736,6 +736,83 @@ fn parseCode(allocator: std.mem.Allocator, reader: *Reader) !Module.Code {
     };
 }
 
+fn parseDataEntry(allocator: std.mem.Allocator, reader: *Reader) !types.Data {
+    const flags = try reader.readU32();
+
+    switch (flags) {
+        0 => {
+            // Active data with memory 0 and offset expression
+            const expr_start = reader.pos;
+            // Skip to end of init expression
+            while (true) {
+                const byte = try reader.readByte();
+                if (byte == 0x0b) break; // end
+                switch (byte) {
+                    0x41 => _ = try reader.readI32(),
+                    0x42 => _ = try reader.readI64(),
+                    0x23 => _ = try reader.readU32(), // global.get
+                    else => {},
+                }
+            }
+            const expr_instrs = try allocator.dupe(u8, reader.data[expr_start..reader.pos]);
+
+            // Read data bytes
+            const data_len = try reader.readU32();
+            const init = try allocator.dupe(u8, reader.data[reader.pos..][0..data_len]);
+            reader.pos += data_len;
+
+            return .{
+                .init = init,
+                .mode = .{ .active = .{
+                    .mem_idx = 0,
+                    .offset = .{ .instrs = expr_instrs },
+                } },
+            };
+        },
+        1 => {
+            // Passive data segment
+            const data_len = try reader.readU32();
+            const init = try allocator.dupe(u8, reader.data[reader.pos..][0..data_len]);
+            reader.pos += data_len;
+
+            return .{
+                .init = init,
+                .mode = .passive,
+            };
+        },
+        2 => {
+            // Active data with explicit memory index
+            const mem_idx = try reader.readU32();
+
+            const expr_start = reader.pos;
+            while (true) {
+                const byte = try reader.readByte();
+                if (byte == 0x0b) break;
+                switch (byte) {
+                    0x41 => _ = try reader.readI32(),
+                    0x42 => _ = try reader.readI64(),
+                    0x23 => _ = try reader.readU32(),
+                    else => {},
+                }
+            }
+            const expr_instrs = try allocator.dupe(u8, reader.data[expr_start..reader.pos]);
+
+            const data_len = try reader.readU32();
+            const init = try allocator.dupe(u8, reader.data[reader.pos..][0..data_len]);
+            reader.pos += data_len;
+
+            return .{
+                .init = init,
+                .mode = .{ .active = .{
+                    .mem_idx = mem_idx,
+                    .offset = .{ .instrs = expr_instrs },
+                } },
+            };
+        },
+        else => return error.InvalidData,
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
