@@ -23,8 +23,49 @@ pub const TextExtractor = struct {
     text_leading: f64 = 0,
     last_y: ?f64 = null,
 
+    // Font encoding (ToUnicode CMap per font name)
+    font_cmaps: std.StringHashMap(*CMap),
+    current_font: ?[]const u8 = null,
+    owned_font_names: std.ArrayList([]u8),
+
     pub fn init(allocator: std.mem.Allocator) TextExtractor {
-        return .{ .allocator = allocator };
+        return .{
+            .allocator = allocator,
+            .font_cmaps = std.StringHashMap(*CMap).init(allocator),
+            .owned_font_names = std.ArrayList([]u8).empty,
+        };
+    }
+
+    pub fn deinit(self: *TextExtractor) void {
+        // Free CMap objects
+        var iter = self.font_cmaps.valueIterator();
+        while (iter.next()) |cmap_ptr| {
+            cmap_ptr.*.deinit();
+            self.allocator.destroy(cmap_ptr.*);
+        }
+        self.font_cmaps.deinit();
+
+        // Free owned font name strings
+        for (self.owned_font_names.items) |name| {
+            self.allocator.free(name);
+        }
+        self.owned_font_names.deinit(self.allocator);
+    }
+
+    /// Add a font CMap (takes ownership of the CMap)
+    pub fn addFontCMap(self: *TextExtractor, font_name: []const u8, cmap_data: *CMap) !void {
+        // Store with owned copy of font name
+        const owned_name = try self.allocator.dupe(u8, font_name);
+        try self.owned_font_names.append(self.allocator, owned_name);
+        try self.font_cmaps.put(owned_name, cmap_data);
+    }
+
+    /// Get current font's CMap (if any)
+    fn getCurrentCMap(self: *const TextExtractor) ?*const CMap {
+        if (self.current_font) |font| {
+            return self.font_cmaps.get(font);
+        }
+        return null;
     }
 
     /// Extract text from decompressed content stream data
