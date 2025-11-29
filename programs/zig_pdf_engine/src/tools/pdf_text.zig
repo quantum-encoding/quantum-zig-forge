@@ -1,5 +1,5 @@
 const std = @import("std");
-const pdf = @import("../lib.zig");
+const pdf = @import("pdf-engine");
 
 const Document = pdf.Document;
 
