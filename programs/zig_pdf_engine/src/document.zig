@@ -25,6 +25,9 @@ pub const Document = struct {
     version: []const u8,
     allocator: std.mem.Allocator,
 
+    // Cache for decompressed object streams (keyed by stream object number)
+    objstm_cache: std.AutoHashMap(u32, []u8),
+
     pub const OpenError = error{
         FileNotFound,
         AccessDenied,
