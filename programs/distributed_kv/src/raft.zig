@@ -486,7 +486,7 @@ pub const RaftNode = struct {
         }
 
         // Append noop entry to commit entries from previous terms
-        self.appendEntry(.noop, &[_]u8{}) catch {};
+        _ = self.appendEntry(.noop, &[_]u8{}) catch 0;
 
         // Send initial heartbeats
         self.sendHeartbeats();
