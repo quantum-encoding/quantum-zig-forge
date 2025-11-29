@@ -317,7 +317,7 @@ pub const Instance = struct {
         self.allocator.free(self.memories);
 
         self.allocator.free(self.globals);
-        self.host_funcs.deinit(self.allocator);
+        self.host_funcs.deinit();
     }
 
     /// Evaluate a constant initialization expression
