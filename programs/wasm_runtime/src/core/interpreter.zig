@@ -403,9 +403,14 @@ pub const Instance = struct {
         // Check if import or defined
         if (func_idx < self.module.import_func_count) {
             // Import function - use import resolver
+            std.debug.print("[DEBUG] Import call: func_idx={d}, import_resolver={any}\n", .{ func_idx, self.import_resolver });
             if (self.import_resolver) |resolver| {
                 // Get import info
-                const import = self.module.getImport(func_idx) orelse return error.InvalidFunction;
+                const import = self.module.getImport(func_idx) orelse {
+                    std.debug.print("[DEBUG] getImport returned null\n", .{});
+                    return error.InvalidFunction;
+                };
+                std.debug.print("[DEBUG] Calling import: {s}.{s}\n", .{ import.module, import.name });
 
                 // Pop args back from stack for the resolver
                 var call_args = self.allocator.alloc(Value, func_type.params.len) catch return error.OutOfMemory;
