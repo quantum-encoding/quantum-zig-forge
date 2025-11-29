@@ -255,16 +255,71 @@ pub const Document = struct {
         }
     }
 
-    /// Get page reference by index
+    /// Get page reference by index - traverses page tree properly handling compressed objects
     fn getPageRef(self: *Document, page_index: usize) !ObjectRef {
         const pages_ref = try self.getPagesRef();
-        var tree = PageTree.init(self.allocator, self.data, self.makeXrefGetter());
-        defer tree.deinit();
 
-        try tree.buildPageList(pages_ref);
+        // Build list of page refs by traversing the tree
+        var page_refs = std.ArrayList(ObjectRef).empty;
+        defer page_refs.deinit(self.allocator);
 
-        if (page_index >= tree.page_refs.items.len) return error.PageNotFound;
-        return tree.page_refs.items[page_index];
+        try self.traversePageTree(pages_ref, &page_refs);
+
+        if (page_index >= page_refs.items.len) return error.PageNotFound;
+        return page_refs.items[page_index];
+    }
+
+    /// Recursively traverse the page tree collecting page references
+    fn traversePageTree(self: *Document, node_ref: ObjectRef, page_refs: *std.ArrayList(ObjectRef)) !void {
+        const node_obj = self.resolveRef(node_ref) catch return;
+
+        switch (node_obj) {
+            .dict => |dict_bytes| {
+                var parser = DictParser.init(dict_bytes);
+
+                // Check /Type
+                const type_obj = parser.get("Type") orelse return;
+                const type_name = type_obj.asName() orelse return;
+
+                if (std.mem.eql(u8, type_name, "Pages")) {
+                    // Intermediate node - recurse into /Kids
+                    const kids_obj = parser.get("Kids") orelse return;
+                    switch (kids_obj) {
+                        .array => |kids_bytes| {
+                            try self.traversePageKids(kids_bytes, page_refs);
+                        },
+                        else => {},
+                    }
+                } else if (std.mem.eql(u8, type_name, "Page")) {
+                    // Leaf node - add to list
+                    try page_refs.append(self.allocator, node_ref);
+                }
+            },
+            else => {},
+        }
+    }
+
+    /// Parse Kids array and recurse
+    fn traversePageKids(self: *Document, kids_bytes: []const u8, page_refs: *std.ArrayList(ObjectRef)) !void {
+        var lex = Lexer.init(kids_bytes);
+
+        while (true) {
+            const num_tok = lex.next() orelse break;
+            if (num_tok.tag != .number) continue;
+
+            const gen_tok = lex.next() orelse break;
+            if (gen_tok.tag != .number) continue;
+
+            const r_tok = lex.next() orelse break;
+            if (r_tok.tag != .keyword_ref) continue;
+
+            const ref = ObjectRef{
+                .obj_num = @intCast(num_tok.asInt() orelse continue),
+                .gen_num = @intCast(gen_tok.asInt() orelse continue),
+            };
+
+            try self.traversePageTree(ref, page_refs);
+        }
     }
 
     /// Get decompressed content stream for a page dictionary
