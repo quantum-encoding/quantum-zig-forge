@@ -97,11 +97,18 @@ pub const Document = struct {
             .xref_table = xref_table,
             .version = version,
             .allocator = allocator,
+            .objstm_cache = std.AutoHashMap(u32, []u8).init(allocator),
         };
     }
 
     /// Close the document
     pub fn close(self: *Document) void {
+        // Free cached object stream data
+        var iter = self.objstm_cache.valueIterator();
+        while (iter.next()) |cached_data| {
+            self.allocator.free(cached_data.*);
+        }
+        self.objstm_cache.deinit();
         self.xref_table.deinit();
         posix.munmap(self.data);
         posix.close(self.fd);
