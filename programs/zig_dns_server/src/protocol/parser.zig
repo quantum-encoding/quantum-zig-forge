@@ -294,7 +294,22 @@ pub const Builder = struct {
         if (self.pos + 12 > self.buf.len) return error.BufferTooSmall;
 
         self.writeU16BE(header.id);
-        self.writeU16BE(@bitCast(header.flags));
+
+        // Construct flags in DNS wire format:
+        // Byte 1: QR(1) OPCODE(4) AA(1) TC(1) RD(1)
+        // Byte 2: RA(1) Z(1) AD(1) CD(1) RCODE(4)
+        const flags_u16: u16 = (@as(u16, @intFromBool(header.flags.qr)) << 15) |
+            (@as(u16, header.flags.opcode) << 11) |
+            (@as(u16, @intFromBool(header.flags.aa)) << 10) |
+            (@as(u16, @intFromBool(header.flags.tc)) << 9) |
+            (@as(u16, @intFromBool(header.flags.rd)) << 8) |
+            (@as(u16, @intFromBool(header.flags.ra)) << 7) |
+            (@as(u16, @intFromBool(header.flags.z)) << 6) |
+            (@as(u16, @intFromBool(header.flags.ad)) << 5) |
+            (@as(u16, @intFromBool(header.flags.cd)) << 4) |
+            @as(u16, header.flags.rcode);
+        self.writeU16BE(flags_u16);
+
         self.writeU16BE(header.qd_count);
         self.writeU16BE(header.an_count);
         self.writeU16BE(header.ns_count);
