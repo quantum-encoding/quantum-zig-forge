@@ -196,6 +196,25 @@ pub const Module = struct {
         }
         return null;
     }
+
+    /// Get import by function index (for imported functions)
+    pub fn getImport(self: *const Module, func_idx: u32) ?Import {
+        if (func_idx >= self.import_func_count) return null;
+
+        var idx: u32 = 0;
+        for (self.imports) |imp| {
+            switch (imp.desc) {
+                .func => {
+                    if (idx == func_idx) {
+                        return imp;
+                    }
+                    idx += 1;
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
 };
 
 /// Binary reader with LEB128 support
