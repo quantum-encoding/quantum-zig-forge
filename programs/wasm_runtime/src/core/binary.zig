@@ -407,6 +407,7 @@ pub const ParseError = error{
     OutOfMemory,
     InvalidCode,
     InvalidGlobal,
+    InvalidData,
 };
 
 /// Parse a WASM binary module
