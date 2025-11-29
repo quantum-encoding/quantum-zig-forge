@@ -117,8 +117,8 @@ pub const FlateDecode = struct {
 /// ASCII85 decoder (base-85 encoding)
 pub const Ascii85Decode = struct {
     pub fn decode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
-        var result = std.ArrayList(u8).init(allocator);
-        errdefer result.deinit();
+        var result = std.ArrayList(u8).empty;
+        errdefer result.deinit(allocator);
 
         var i: usize = 0;
         while (i < encoded.len) {
