@@ -328,7 +328,6 @@ pub const WasiInstance = struct {
 
     /// fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr) -> errno
     fn fdWrite(self: *WasiInstance, args: []const Value) ?Value {
-        std.debug.print("[WASI] fd_write called with {d} args\n", .{args.len});
         if (args.len < 4) return .{ .i32 = @intFromEnum(Errno.inval) };
 
         const fd_num: u32 = @bitCast(args[0].asI32());
