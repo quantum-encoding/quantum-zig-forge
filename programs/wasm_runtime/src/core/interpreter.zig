@@ -405,6 +405,7 @@ pub const Instance = struct {
         }
 
         // Check if import or defined
+        std.debug.print("[DEBUG] Checking: func_idx={d} < import_count={d} => {}\n", .{ func_idx, self.module.import_func_count, func_idx < self.module.import_func_count });
         if (func_idx < self.module.import_func_count) {
             // Import function - use import resolver
             std.debug.print("[DEBUG] Import call: func_idx={d}, import_resolver={any}\n", .{ func_idx, self.import_resolver });
