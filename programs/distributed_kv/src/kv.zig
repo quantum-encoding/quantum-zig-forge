@@ -420,7 +420,7 @@ pub const KVStore = struct {
     }
 
     /// Apply a Compare-and-Swap operation
-    fn applyCas(self: *KVStore, key: []const u8, expected_version: u64, new_value: []const u8, ttl_ms: ?u64) !bool {
+    pub fn applyCas(self: *KVStore, key: []const u8, expected_version: u64, new_value: []const u8, ttl_ms: ?u64) !bool {
         self.mutex.lock();
         defer self.mutex.unlock();
 
