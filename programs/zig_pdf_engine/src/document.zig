@@ -348,32 +348,23 @@ pub const Document = struct {
         var result = std.ArrayList(u8).empty;
         errdefer result.deinit(self.allocator);
 
-        // Build page tree once
-        const pages_ref = try self.getPagesRef();
-        var tree = PageTree.init(self.allocator, self.data, self.makeXrefGetter());
-        defer tree.deinit();
-        try tree.buildPageList(pages_ref);
-
         for (0..page_count) |i| {
-            if (tree.getPage(i)) |*pg| {
-                var page = pg.*;
-                const text = page.extractText() catch |err| {
-                    // Skip pages that fail to extract
-                    std.debug.print("Warning: Failed to extract page {d}: {}\n", .{ i + 1, err });
-                    continue;
-                };
-                defer self.allocator.free(text);
+            const text = self.extractPageText(i) catch |err| {
+                // Skip pages that fail to extract
+                std.debug.print("Warning: Failed to extract page {d}: {}\n", .{ i + 1, err });
+                continue;
+            };
+            defer self.allocator.free(text);
 
-                try result.appendSlice(self.allocator, text);
+            try result.appendSlice(self.allocator, text);
 
-                // Add page separator if not last page
-                if (i < page_count - 1) {
-                    try result.appendSlice(self.allocator, "\n\n--- Page ");
-                    var buf: [16]u8 = undefined;
-                    const num_str = std.fmt.bufPrint(&buf, "{d}", .{i + 2}) catch "?";
-                    try result.appendSlice(self.allocator, num_str);
-                    try result.appendSlice(self.allocator, " ---\n\n");
-                }
+            // Add page separator if not last page
+            if (i < page_count - 1) {
+                try result.appendSlice(self.allocator, "\n\n--- Page ");
+                var buf: [16]u8 = undefined;
+                const num_str = std.fmt.bufPrint(&buf, "{d}", .{i + 2}) catch "?";
+                try result.appendSlice(self.allocator, num_str);
+                try result.appendSlice(self.allocator, " ---\n\n");
             }
         }
 
