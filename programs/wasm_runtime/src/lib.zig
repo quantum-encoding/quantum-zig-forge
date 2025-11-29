@@ -55,10 +55,9 @@ pub fn instantiate(allocator: std.mem.Allocator, module: *const Module) !Instanc
 }
 
 /// Create a WASI-enabled instance
+/// NOTE: Call setupImports() on the returned instance before running
 pub fn instantiateWasi(allocator: std.mem.Allocator, module: *const Module, config: wasi.Config) !wasi.WasiInstance {
-    var instance = try wasi.WasiInstance.init(allocator, module, config);
-    instance.setupImports();
-    return instance;
+    return wasi.WasiInstance.init(allocator, module, config);
 }
 
 const std = @import("std");
