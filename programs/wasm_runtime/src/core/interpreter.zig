@@ -618,7 +618,7 @@ pub const Instance = struct {
 
             .call => {
                 const func_idx = reader.readU32() catch return error.UnexpectedEnd;
-                _ = try self.callFunc(func_idx, &.{});
+                _ = try self.callFuncInternal(func_idx);
             },
 
             .call_indirect => {
