@@ -292,6 +292,8 @@ pub const TextExtractor = struct {
     }
 
     fn appendTextFromArray(self: *TextExtractor, result: *std.ArrayList(u8), operand: *const Operand) !void {
+        const maybe_cmap = self.getCurrentCMap();
+
         switch (operand.*) {
             .array => |items| {
                 for (items) |*item| {
@@ -299,12 +301,22 @@ pub const TextExtractor = struct {
                         .literal_string => |s| {
                             const decoded = try decodePdfString(self.allocator, s);
                             defer self.allocator.free(decoded);
-                            try result.appendSlice(self.allocator, decoded);
+
+                            if (maybe_cmap) |cmap| {
+                                try self.applyCMapToText(result, decoded, cmap);
+                            } else {
+                                try result.appendSlice(self.allocator, decoded);
+                            }
                         },
                         .hex_string => |h| {
                             const decoded = try filters.AsciiHexDecode.decode(self.allocator, h);
                             defer self.allocator.free(decoded);
-                            try result.appendSlice(self.allocator, decoded);
+
+                            if (maybe_cmap) |cmap| {
+                                try self.applyCMapToText(result, decoded, cmap);
+                            } else {
+                                try result.appendSlice(self.allocator, decoded);
+                            }
                         },
                         .number => |n| {
                             // Large negative numbers indicate word spacing
