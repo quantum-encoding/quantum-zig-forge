@@ -111,7 +111,7 @@ pub const Key = struct {
         return .{ .char = char };
     }
 
-    pub fn special(k: SpecialKey) Key {
+    pub fn specialKey(k: SpecialKey) Key {
         return .{ .special = k };
     }
 };
