@@ -84,10 +84,21 @@ fn printUsage() void {
 fn playCommand(allocator: std.mem.Allocator, file_path: []const u8, extra_args: []const []const u8) !void {
     // Parse extra arguments
     var device: []const u8 = "default";
+    var eq_preset: ?lib.EqPreset = null;
+
     var i: usize = 0;
     while (i < extra_args.len) : (i += 1) {
         if (std.mem.eql(u8, extra_args[i], "--device") and i + 1 < extra_args.len) {
             device = extra_args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, extra_args[i], "--eq") and i + 1 < extra_args.len) {
+            const preset_name = extra_args[i + 1];
+            eq_preset = parseEqPreset(preset_name);
+            if (eq_preset == null) {
+                std.debug.print("Unknown EQ preset: {s}\n", .{preset_name});
+                std.debug.print("Valid presets: flat, bass, treble, vocal, electronic, rock, jazz, classical\n", .{});
+                return;
+            }
             i += 1;
         }
     }
@@ -109,6 +120,13 @@ fn playCommand(allocator: std.mem.Allocator, file_path: []const u8, extra_args: 
         return;
     };
     defer engine.deinit();
+
+    // Apply EQ preset if specified
+    if (eq_preset) |preset| {
+        engine.applyEqPreset(preset);
+        engine.setDspEnabled(true);
+        std.debug.print("EQ: {s}\n", .{@tagName(preset)});
+    }
 
     // Load file
     engine.loadFile(file_path) catch |err| {
