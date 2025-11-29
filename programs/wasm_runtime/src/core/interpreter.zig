@@ -208,6 +208,17 @@ pub const Global = struct {
     mutable: bool,
 };
 
+/// Import resolver function type
+/// Called when an imported function is invoked
+/// Parameters: module name, function name, arguments
+/// Returns: result value (or null for void functions)
+pub const ImportResolver = *const fn (
+    ctx: *anyopaque,
+    module: []const u8,
+    name: []const u8,
+    args: []const Value,
+) TrapError!?Value;
+
 /// WASM interpreter instance
 pub const Instance = struct {
     allocator: std.mem.Allocator,
@@ -227,6 +238,10 @@ pub const Instance = struct {
 
     /// Host functions
     host_funcs: std.StringHashMap(*const fn (*Instance, []const Value) TrapError!?Value),
+
+    /// Import resolver for handling imported functions
+    import_resolver: ?ImportResolver = null,
+    import_resolver_ctx: ?*anyopaque = null,
 
     /// Maximum stack depth
     max_stack_depth: usize = 1024,
