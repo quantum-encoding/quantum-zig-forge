@@ -360,25 +360,27 @@ pub const Document = struct {
 
     /// Extract an object from cached object stream data
     fn extractFromCachedObjStm(self: *Document, data: []const u8, obj_index: u16) !Object {
-        _ = self;
-
-        // First, we need to find /N and /First from the original stream dict
-        // But we don't have it here... We need to parse the header to find the object
-
         // Object stream format: "obj1_num obj1_off obj2_num obj2_off ... [actual objects starting at /First]"
-        // We need to scan the header to find our object
+        // The offsets in the header are relative to where objects start
 
         var header_lex = Lexer.init(data);
         var obj_offsets = std.ArrayList(struct { num: u32, off: usize }).empty;
         defer obj_offsets.deinit(self.allocator);
 
-        // Read all object number/offset pairs until we hit a non-number
+        // Read all object number/offset pairs
+        // Keep track of where the header ends (after all number pairs)
+        var last_valid_pos: usize = 0;
+
         while (true) {
+            // Save position before reading
+            const before_num = header_lex.getPosition();
+
             const num_tok = header_lex.next() orelse break;
             if (num_tok.tag != .number) {
-                // We've hit the first object - this is where /First points
+                // We've gone past the header - backtrack
                 break;
             }
+
             const off_tok = header_lex.next() orelse break;
             if (off_tok.tag != .number) break;
 
@@ -386,13 +388,17 @@ pub const Document = struct {
                 .num = @intCast(num_tok.asInt() orelse 0),
                 .off = @intCast(off_tok.asInt() orelse 0),
             });
+
+            last_valid_pos = header_lex.getPosition();
+            _ = before_num;
         }
 
         if (obj_index >= obj_offsets.items.len) return error.ObjectNotFound;
 
-        // Calculate where objects start (after the header)
-        // The header ends at the current lexer position minus the last token length
-        const first = header_lex.getPosition();
+        // The 'first' value in the original dict tells us where objects start
+        // Since we don't have it cached, we use the position after reading all header pairs
+        // But the offsets in the header are already relative to /First, so we use last_valid_pos
+        const first = last_valid_pos;
         const target_offset = obj_offsets.items[obj_index].off;
 
         const obj_start = first + target_offset;
