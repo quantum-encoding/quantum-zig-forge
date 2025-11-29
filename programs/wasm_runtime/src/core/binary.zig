@@ -447,6 +447,8 @@ pub fn parse(allocator: std.mem.Allocator, data: []const u8) ParseError!Module {
     defer codes_list.deinit(allocator);
     var custom_list = std.ArrayList(Module.CustomSection).empty;
     defer custom_list.deinit(allocator);
+    var datas_list = std.ArrayList(types.Data).empty;
+    defer datas_list.deinit(allocator);
 
     // Parse sections
     while (!reader.isEof()) {
