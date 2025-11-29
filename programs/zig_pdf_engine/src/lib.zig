@@ -37,6 +37,9 @@ pub const FlateDecode = filters.FlateDecode;
 pub const Ascii85Decode = filters.Ascii85Decode;
 pub const AsciiHexDecode = filters.AsciiHexDecode;
 
+// CMap for font encoding
+pub const CMap = cmap.CMap;
+
 test {
     @import("std").testing.refAllDecls(@This());
 }
