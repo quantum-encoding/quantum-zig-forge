@@ -265,7 +265,7 @@ pub const DistributedNode = struct {
     fn tickLoop(self: *DistributedNode) void {
         while (self.running.load(.acquire)) {
             self.raft_node.tick() catch {};
-            std.posix.nanosleep(0,10 * std.time.ns_per_ms); // 10ms tick interval
+            std.posix.nanosleep(0, 10_000_000); // 10ms tick interval
         }
     }
 
