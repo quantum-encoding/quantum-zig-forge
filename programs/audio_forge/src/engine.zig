@@ -1,11 +1,11 @@
 //! Audio Engine
 //!
 //! Main audio processing orchestrator. Manages the decoder thread,
-//! ring buffer, and audio output backend.
+//! ring buffer, DSP processing, and audio output backend.
 //!
 //! Thread Model:
 //! - Main Thread: File I/O, decoding, control
-//! - Audio Thread: Ring buffer read, (future) DSP, backend output
+//! - Audio Thread: Ring buffer read, DSP processing, backend output
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -13,10 +13,14 @@ const Allocator = std.mem.Allocator;
 const ring_buffer = @import("ring_buffer.zig");
 const codec = @import("codec/mod.zig");
 const backend = @import("backend/mod.zig");
+const dsp = @import("dsp/mod.zig");
 
 const AudioRingBuffer = ring_buffer.AudioRingBuffer;
 const WavDecoder = codec.WavDecoder;
 const AlsaBackend = backend.AlsaBackend;
+const DspGraph = dsp.DspGraph;
+const ParametricEq = dsp.ParametricEq;
+const ProcessorNode = dsp.ProcessorNode;
 
 /// Engine state
 pub const State = enum(u8) {
