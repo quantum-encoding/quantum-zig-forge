@@ -551,7 +551,7 @@ pub const AlpacaHFTBridge = struct {
             }
 
             // Small delay to prevent CPU spinning
-            std.Thread.sleep(100 * std.time.ns_per_us); // 100 microseconds
+            std.posix.nanosleep(0,100 * std.time.ns_per_us); // 100 microseconds
         }
 
         std.debug.print("🔄 Processed {d} total ticks\n", .{tick_count});
