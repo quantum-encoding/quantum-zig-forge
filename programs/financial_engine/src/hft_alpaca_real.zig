@@ -160,7 +160,7 @@ pub const RealHFTSystem = struct {
                 std.debug.print("❌ Authentication timeout after {}ms\n", .{max_wait_ms});
                 return error.AuthenticationTimeout;
             }
-            std.Thread.sleep(check_interval_ms * std.time.ns_per_ms);
+            std.posix.nanosleep(0,check_interval_ms * std.time.ns_per_ms);
             waited_ms += check_interval_ms;
         }
 
@@ -224,7 +224,7 @@ pub const RealHFTSystem = struct {
             }
             
             // Small sleep to prevent CPU spinning
-            std.Thread.sleep(100 * std.time.ns_per_ms); // 100ms
+            std.posix.nanosleep(0,100 * std.time.ns_per_ms); // 100ms
         }
         
         std.debug.print("🏁 System run completed\n", .{});
