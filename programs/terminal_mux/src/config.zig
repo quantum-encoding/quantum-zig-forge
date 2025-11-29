@@ -358,6 +358,6 @@ test "key creation" {
     try std.testing.expect(ctrl_b.mods.ctrl);
     try std.testing.expectEqual(@as(u8, 'b'), ctrl_b.char);
 
-    const up = Key.special(.up);
+    const up = Key.specialKey(.up);
     try std.testing.expectEqual(Key.SpecialKey.up, up.special);
 }
