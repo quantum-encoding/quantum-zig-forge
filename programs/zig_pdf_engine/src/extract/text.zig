@@ -524,6 +524,7 @@ test "decode pdf string octal" {
 test "text extractor basic" {
     const content = "BT /F1 12 Tf (Hello World) Tj ET";
     var extractor = TextExtractor.init(std.testing.allocator);
+    defer extractor.deinit();
     const text = try extractor.extract(content);
     defer std.testing.allocator.free(text);
     try std.testing.expectEqualStrings("Hello World", text);
