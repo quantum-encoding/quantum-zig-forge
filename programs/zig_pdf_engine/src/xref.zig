@@ -270,7 +270,7 @@ pub const XRefTable = struct {
 
         for (index_pairs.items) |pair| {
             const start_obj = pair[0];
-            const count = pair[1];
+            const entry_count = pair[1];
 
             var i: u32 = 0;
             while (i < count) : (i += 1) {
