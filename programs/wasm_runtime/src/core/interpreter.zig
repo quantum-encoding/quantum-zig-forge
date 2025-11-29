@@ -566,8 +566,9 @@ pub const Instance = struct {
 
             .@"return" => {
                 // Return from current function
-                if (self.call_stack.pop()) |*frame| {
-                    frame.deinit();
+                if (self.call_stack.pop()) |frame| {
+                    var f = frame;
+                    f.deinit();
                 }
                 // Signal to exit execute loop
                 self.labels.clearRetainingCapacity();
