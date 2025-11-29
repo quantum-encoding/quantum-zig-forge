@@ -293,7 +293,7 @@ pub fn main() !void {
     defer allocator.free(api_key);
     
     // Initialize our enterprise-grade AI client
-    var client = AnthropicClient.init(allocator, api_key);
+    var client = try AnthropicClient.init(allocator, api_key);
     defer client.deinit();
     
     std.debug.print("🚀 Initializing high-performance AI client...\n", .{});
