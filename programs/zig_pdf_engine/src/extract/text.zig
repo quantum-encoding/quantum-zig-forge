@@ -289,8 +289,11 @@ fn isOperator(token: Token) bool {
     return false;
 }
 
+/// Explicit error set for operand parsing (avoids recursive inference)
+const ParseOperandError = error{OutOfMemory};
+
 /// Parse an operand from token stream
-fn parseOperand(lex: *Lexer, token: Token, allocator: std.mem.Allocator) !Operand {
+fn parseOperand(lex: *Lexer, token: Token, allocator: std.mem.Allocator) ParseOperandError!Operand {
     switch (token.tag) {
         .number => {
             return .{ .number = token.asFloat() orelse @floatFromInt(token.asInt() orelse 0) };
@@ -321,7 +324,7 @@ fn parseOperand(lex: *Lexer, token: Token, allocator: std.mem.Allocator) !Operan
 }
 
 /// Parse array contents
-fn parseArray(lex: *Lexer, allocator: std.mem.Allocator) !Operand {
+fn parseArray(lex: *Lexer, allocator: std.mem.Allocator) ParseOperandError!Operand {
     var items = std.ArrayList(Operand).empty;
     errdefer {
         for (items.items) |*item| item.deinit(allocator);
