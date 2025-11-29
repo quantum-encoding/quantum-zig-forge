@@ -502,7 +502,7 @@ pub const Client = struct {
 
             var total_read: usize = 0;
             while (total_read < header.payload_len) {
-                const n = stream.read(response_payload[total_read..]) catch {
+                const n = std.posix.recv(stream, response_payload[total_read..], 0) catch {
                     self.allocator.free(response_payload);
                     return ClientError.ConnectionFailed;
                 };
