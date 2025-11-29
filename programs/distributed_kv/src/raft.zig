@@ -16,6 +16,12 @@
 const std = @import("std");
 const wal = @import("wal.zig");
 
+/// Get current time in milliseconds (Zig 0.16 compatible)
+fn currentTimeMs() i64 {
+    const ts = std.posix.clock_gettime(.REALTIME) catch return 0;
+    return @as(i64, ts.sec) * 1000 + @divTrunc(ts.nsec, 1_000_000);
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
