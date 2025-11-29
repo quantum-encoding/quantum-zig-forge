@@ -482,7 +482,7 @@ pub fn recover(allocator: std.mem.Allocator, dir_path: []const u8) !RecoveredSta
 
         switch (record.record_type) {
             .log_entry => {
-                var entry = try raft.LogEntry.decode(allocator, record.data);
+                const entry = try raft.LogEntry.decode(allocator, record.data);
                 try state.log_entries.append(allocator, entry);
             },
             .vote => {
