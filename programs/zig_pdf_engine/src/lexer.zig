@@ -48,6 +48,11 @@ pub const Lexer = struct {
         self.pos = @min(offset, self.data.len);
     }
 
+    /// Get current position
+    pub fn getPosition(self: *const Lexer) usize {
+        return self.pos;
+    }
+
     /// Current position in buffer
     pub fn position(self: *const Lexer) usize {
         return self.pos;
