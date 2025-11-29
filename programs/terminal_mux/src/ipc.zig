@@ -333,7 +333,7 @@ pub fn encodeAttachRequest(allocator: std.mem.Allocator, req: AttachRequest) ![]
 pub fn decodeAttachRequest(data: []const u8) !AttachRequest {
     if (data.len < 6) return error.TooShort;
 
-    const name_len = std.mem.readInt(u16, data[0..2].*, .little);
+    const name_len = std.mem.readInt(u16, data[0..2], .little);
     if (data.len < 6 + name_len) return error.TooShort;
 
     const rows_offset = 2 + name_len;
@@ -341,8 +341,8 @@ pub fn decodeAttachRequest(data: []const u8) !AttachRequest {
 
     return AttachRequest{
         .session_name = data[2 .. 2 + name_len],
-        .rows = std.mem.readInt(u16, data[rows_offset..][0..2].*, .little),
-        .cols = std.mem.readInt(u16, data[cols_offset..][0..2].*, .little),
+        .rows = std.mem.readInt(u16, data[rows_offset..][0..2], .little),
+        .cols = std.mem.readInt(u16, data[cols_offset..][0..2], .little),
     };
 }
 
