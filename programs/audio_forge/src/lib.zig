@@ -32,6 +32,8 @@ pub const Processor = dsp.Processor;
 pub const ProcessorNode = dsp.ProcessorNode;
 pub const BiquadFilter = dsp.BiquadFilter;
 pub const FilterType = dsp.FilterType;
+pub const ParametricEq = dsp.ParametricEq;
+pub const EqPreset = dsp.EqPreset;
 
 // =============================================================================
 // Tests
