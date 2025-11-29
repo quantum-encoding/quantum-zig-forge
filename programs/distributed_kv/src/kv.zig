@@ -406,7 +406,7 @@ pub const KVStore = struct {
     }
 
     /// Apply a Delete operation
-    fn applyDelete(self: *KVStore, key: []const u8) bool {
+    pub fn applyDelete(self: *KVStore, key: []const u8) bool {
         self.mutex.lock();
         defer self.mutex.unlock();
 
