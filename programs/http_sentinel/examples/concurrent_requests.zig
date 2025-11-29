@@ -2,11 +2,12 @@
 // Demonstrates the correct pattern for concurrent HTTP requests in Zig 0.16.0
 
 const std = @import("std");
+const http_sentinel = @import("http-sentinel");
 
-// For standalone compilation, we'll embed the necessary types
-const HttpClient = @import("http_client.zig").HttpClient;
-const ClientPool = @import("client_pool.zig").ClientPool;
-const RetryEngine = @import("retry.zig").RetryEngine;
+// Import from main library
+const HttpClient = http_sentinel.HttpClient;
+const ClientPool = http_sentinel.ClientPool;
+const RetryEngine = http_sentinel.RetryEngine;
 
 /// Worker that performs HTTP requests with its own dedicated client
 const Worker = struct {
