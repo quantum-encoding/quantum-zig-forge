@@ -663,9 +663,7 @@ fn parseGlobal(allocator: std.mem.Allocator, reader: *Reader) !Module.Global {
 }
 
 fn parseCode(allocator: std.mem.Allocator, reader: *Reader) !Module.Code {
-    const size = try reader.readU32();
-    const code_start = reader.pos;
-    _ = size;
+    _ = try reader.readU32(); // size - we don't need it, we track position
 
     // Parse locals
     const local_count = try reader.readU32();
