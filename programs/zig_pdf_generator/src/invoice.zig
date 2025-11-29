@@ -424,10 +424,16 @@ pub const InvoiceRenderer = struct {
 // =============================================================================
 
 /// Generate invoice PDF from InvoiceData struct
-pub fn generateInvoice(allocator: std.mem.Allocator, data: InvoiceData) ![]const u8 {
+/// Returns an allocator-owned slice that must be freed by the caller.
+pub fn generateInvoice(allocator: std.mem.Allocator, data: InvoiceData) ![]u8 {
     var renderer = InvoiceRenderer.init(allocator, data);
     defer renderer.deinit();
-    return try renderer.render();
+
+    const pdf_output = try renderer.render();
+
+    // Make a copy since the original is owned by renderer.doc
+    const result = try allocator.dupe(u8, pdf_output);
+    return result;
 }
 
 // =============================================================================
