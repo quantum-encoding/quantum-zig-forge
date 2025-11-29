@@ -9,14 +9,14 @@ Quantum Curl is not a curl clone. It is a strategic weapon designed for the orch
 The genius lies in the decoupling of the **Battle Plan** (the JSONL manifest) from the **Execution Engine** (the high-concurrency Zig runtime). This allows you to define complex, multi-stage, multi-service operations as a simple, declarative data file, and then unleash the full, zero-contention power of the `http_sentinel` engine to execute that plan with breathtaking speed and efficiency.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     QUANTUM CURL ARCHITECTURE                    │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
+┌────────────────────────────────────────────────────────────────┐
+│                     QUANTUM CURL ARCHITECTURE                  │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
 │   ┌─────────────┐    ┌──────────────────────────────────────┐  │
-│   │ Battle Plan │    │         Execution Engine              │  │
+│   │ Battle Plan │    │         Execution Engine             │  │
 │   │   (JSONL)   │───▶│  ┌────────────────────────────────┐  │  │
-│   │             │    │  │     Thread Pool (N workers)     │  │  │
+│   │             │    │  │     Thread Pool (N workers)    │  │  │
 │   │ {"id":"1"}  │    │  │  ┌─────┐ ┌─────┐ ┌─────┐       │  │  │
 │   │ {"id":"2"}  │    │  │  │ W1  │ │ W2  │ │ WN  │       │  │  │
 │   │ {"id":"3"}  │    │  │  │ HC  │ │ HC  │ │ HC  │       │  │  │
@@ -42,7 +42,7 @@ The genius lies in the decoupling of the **Battle Plan** (the JSONL manifest) fr
 │                         │ {"id":"2","status":500}  │           │
 │                         │ {"id":"3","status":200}  │           │
 │                         └──────────────────────────┘           │
-└─────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ## Performance Characteristics
