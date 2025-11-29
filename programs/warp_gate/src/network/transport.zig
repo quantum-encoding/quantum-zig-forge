@@ -264,7 +264,7 @@ pub const Transport = struct {
         try self.sendRaw(packet);
 
         // Track for retransmission
-        try self.pending.append(.{
+        try self.pending.append(self.allocator, .{
             .data = packet,
             .sequence = seq,
             .sent_time = std.time.milliTimestamp(),
