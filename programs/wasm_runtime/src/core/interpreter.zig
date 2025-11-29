@@ -977,15 +977,15 @@ pub const Instance = struct {
             // i32 arithmetic
             .i32_clz => {
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .i32 = @intCast(@clz(a)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @intCast(@clz(a)) }) catch return error.OutOfMemory;
             },
             .i32_ctz => {
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .i32 = @intCast(@ctz(a)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @intCast(@ctz(a)) }) catch return error.OutOfMemory;
             },
             .i32_popcnt => {
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .i32 = @intCast(@popCount(a)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @intCast(@popCount(a)) }) catch return error.OutOfMemory;
             },
             .i32_add => {
                 const b = self.popI32();
@@ -1007,25 +1007,25 @@ pub const Instance = struct {
                 const a = self.popI32();
                 if (b == 0) return error.IntegerDivideByZero;
                 if (a == std.math.minInt(i32) and b == -1) return error.IntegerOverflow;
-                self.stack.append(.{ .i32 = @divTrunc(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @divTrunc(a, b) }) catch return error.OutOfMemory;
             },
             .i32_div_u => {
                 const b: u32 = @bitCast(self.popI32());
                 const a: u32 = @bitCast(self.popI32());
                 if (b == 0) return error.IntegerDivideByZero;
-                self.stack.append(.{ .i32 = @bitCast(a / b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @bitCast(a / b) }) catch return error.OutOfMemory;
             },
             .i32_rem_s => {
                 const b = self.popI32();
                 const a = self.popI32();
                 if (b == 0) return error.IntegerDivideByZero;
-                self.stack.append(.{ .i32 = @rem(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @rem(a, b) }) catch return error.OutOfMemory;
             },
             .i32_rem_u => {
                 const b: u32 = @bitCast(self.popI32());
                 const a: u32 = @bitCast(self.popI32());
                 if (b == 0) return error.IntegerDivideByZero;
-                self.stack.append(.{ .i32 = @bitCast(a % b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @bitCast(a % b) }) catch return error.OutOfMemory;
             },
             .i32_and => {
                 const b = self.popI32();
@@ -1055,31 +1055,31 @@ pub const Instance = struct {
             .i32_shr_u => {
                 const b: u5 = @truncate(@as(u32, @bitCast(self.popI32())));
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .i32 = @bitCast(a >> b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @bitCast(a >> b) }) catch return error.OutOfMemory;
             },
             .i32_rotl => {
                 const b: u5 = @truncate(@as(u32, @bitCast(self.popI32())));
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .i32 = @bitCast(std.math.rotl(u32, a, b)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @bitCast(std.math.rotl(u32, a, b)) }) catch return error.OutOfMemory;
             },
             .i32_rotr => {
                 const b: u5 = @truncate(@as(u32, @bitCast(self.popI32())));
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .i32 = @bitCast(std.math.rotr(u32, a, b)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @bitCast(std.math.rotr(u32, a, b)) }) catch return error.OutOfMemory;
             },
 
             // i64 arithmetic
             .i64_clz => {
                 const a: u64 = @bitCast(self.popI64());
-                self.stack.append(.{ .i64 = @intCast(@clz(a)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @intCast(@clz(a)) }) catch return error.OutOfMemory;
             },
             .i64_ctz => {
                 const a: u64 = @bitCast(self.popI64());
-                self.stack.append(.{ .i64 = @intCast(@ctz(a)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @intCast(@ctz(a)) }) catch return error.OutOfMemory;
             },
             .i64_popcnt => {
                 const a: u64 = @bitCast(self.popI64());
-                self.stack.append(.{ .i64 = @intCast(@popCount(a)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @intCast(@popCount(a)) }) catch return error.OutOfMemory;
             },
             .i64_add => {
                 const b = self.popI64();
@@ -1101,25 +1101,25 @@ pub const Instance = struct {
                 const a = self.popI64();
                 if (b == 0) return error.IntegerDivideByZero;
                 if (a == std.math.minInt(i64) and b == -1) return error.IntegerOverflow;
-                self.stack.append(.{ .i64 = @divTrunc(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @divTrunc(a, b) }) catch return error.OutOfMemory;
             },
             .i64_div_u => {
                 const b: u64 = @bitCast(self.popI64());
                 const a: u64 = @bitCast(self.popI64());
                 if (b == 0) return error.IntegerDivideByZero;
-                self.stack.append(.{ .i64 = @bitCast(a / b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @bitCast(a / b) }) catch return error.OutOfMemory;
             },
             .i64_rem_s => {
                 const b = self.popI64();
                 const a = self.popI64();
                 if (b == 0) return error.IntegerDivideByZero;
-                self.stack.append(.{ .i64 = @rem(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @rem(a, b) }) catch return error.OutOfMemory;
             },
             .i64_rem_u => {
                 const b: u64 = @bitCast(self.popI64());
                 const a: u64 = @bitCast(self.popI64());
                 if (b == 0) return error.IntegerDivideByZero;
-                self.stack.append(.{ .i64 = @bitCast(a % b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @bitCast(a % b) }) catch return error.OutOfMemory;
             },
             .i64_and => {
                 const b = self.popI64();
@@ -1149,23 +1149,23 @@ pub const Instance = struct {
             .i64_shr_u => {
                 const b: u6 = @truncate(@as(u64, @bitCast(self.popI64())));
                 const a: u64 = @bitCast(self.popI64());
-                self.stack.append(.{ .i64 = @bitCast(a >> b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @bitCast(a >> b) }) catch return error.OutOfMemory;
             },
             .i64_rotl => {
                 const b: u6 = @truncate(@as(u64, @bitCast(self.popI64())));
                 const a: u64 = @bitCast(self.popI64());
-                self.stack.append(.{ .i64 = @bitCast(std.math.rotl(u64, a, b)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @bitCast(std.math.rotl(u64, a, b)) }) catch return error.OutOfMemory;
             },
             .i64_rotr => {
                 const b: u6 = @truncate(@as(u64, @bitCast(self.popI64())));
                 const a: u64 = @bitCast(self.popI64());
-                self.stack.append(.{ .i64 = @bitCast(std.math.rotr(u64, a, b)) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @bitCast(std.math.rotr(u64, a, b)) }) catch return error.OutOfMemory;
             },
 
             // f32 operations
             .f32_abs => {
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = @abs(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @abs(a) }) catch return error.OutOfMemory;
             },
             .f32_neg => {
                 const a = self.popF32();
@@ -1173,23 +1173,23 @@ pub const Instance = struct {
             },
             .f32_ceil => {
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = @ceil(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @ceil(a) }) catch return error.OutOfMemory;
             },
             .f32_floor => {
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = @floor(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @floor(a) }) catch return error.OutOfMemory;
             },
             .f32_trunc => {
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = @trunc(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @trunc(a) }) catch return error.OutOfMemory;
             },
             .f32_nearest => {
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = @round(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @round(a) }) catch return error.OutOfMemory;
             },
             .f32_sqrt => {
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = @sqrt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @sqrt(a) }) catch return error.OutOfMemory;
             },
             .f32_add => {
                 const b = self.popF32();
@@ -1214,23 +1214,23 @@ pub const Instance = struct {
             .f32_min => {
                 const b = self.popF32();
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = @min(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @min(a, b) }) catch return error.OutOfMemory;
             },
             .f32_max => {
                 const b = self.popF32();
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = @max(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @max(a, b) }) catch return error.OutOfMemory;
             },
             .f32_copysign => {
                 const b = self.popF32();
                 const a = self.popF32();
-                self.stack.append(.{ .f32 = std.math.copysign(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = std.math.copysign(a, b) }) catch return error.OutOfMemory;
             },
 
             // f64 operations
             .f64_abs => {
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = @abs(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @abs(a) }) catch return error.OutOfMemory;
             },
             .f64_neg => {
                 const a = self.popF64();
@@ -1238,23 +1238,23 @@ pub const Instance = struct {
             },
             .f64_ceil => {
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = @ceil(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @ceil(a) }) catch return error.OutOfMemory;
             },
             .f64_floor => {
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = @floor(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @floor(a) }) catch return error.OutOfMemory;
             },
             .f64_trunc => {
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = @trunc(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @trunc(a) }) catch return error.OutOfMemory;
             },
             .f64_nearest => {
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = @round(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @round(a) }) catch return error.OutOfMemory;
             },
             .f64_sqrt => {
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = @sqrt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @sqrt(a) }) catch return error.OutOfMemory;
             },
             .f64_add => {
                 const b = self.popF64();
@@ -1279,23 +1279,23 @@ pub const Instance = struct {
             .f64_min => {
                 const b = self.popF64();
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = @min(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @min(a, b) }) catch return error.OutOfMemory;
             },
             .f64_max => {
                 const b = self.popF64();
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = @max(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @max(a, b) }) catch return error.OutOfMemory;
             },
             .f64_copysign => {
                 const b = self.popF64();
                 const a = self.popF64();
-                self.stack.append(.{ .f64 = std.math.copysign(a, b) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = std.math.copysign(a, b) }) catch return error.OutOfMemory;
             },
 
             // Conversions
             .i32_wrap_i64 => {
                 const a = self.popI64();
-                self.stack.append(.{ .i32 = @truncate(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @truncate(a) }) catch return error.OutOfMemory;
             },
             .i32_trunc_f32_s => {
                 const a = self.popF32();
@@ -1305,7 +1305,7 @@ pub const Instance = struct {
                 {
                     return error.IntegerOverflow;
                 }
-                self.stack.append(.{ .i32 = @intFromFloat(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @intFromFloat(a) }) catch return error.OutOfMemory;
             },
             .i32_trunc_f32_u => {
                 const a = self.popF32();
@@ -1314,7 +1314,7 @@ pub const Instance = struct {
                     return error.IntegerOverflow;
                 }
                 const u: u32 = @intFromFloat(a);
-                self.stack.append(.{ .i32 = @bitCast(u) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @bitCast(u) }) catch return error.OutOfMemory;
             },
             .i32_trunc_f64_s => {
                 const a = self.popF64();
@@ -1324,7 +1324,7 @@ pub const Instance = struct {
                 {
                     return error.IntegerOverflow;
                 }
-                self.stack.append(.{ .i32 = @intFromFloat(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @intFromFloat(a) }) catch return error.OutOfMemory;
             },
             .i32_trunc_f64_u => {
                 const a = self.popF64();
@@ -1333,117 +1333,117 @@ pub const Instance = struct {
                     return error.IntegerOverflow;
                 }
                 const u: u32 = @intFromFloat(a);
-                self.stack.append(.{ .i32 = @bitCast(u) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @bitCast(u) }) catch return error.OutOfMemory;
             },
             .i64_extend_i32_s => {
                 const a = self.popI32();
-                self.stack.append(.{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
             },
             .i64_extend_i32_u => {
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
             },
             .i64_trunc_f32_s => {
                 const a = self.popF32();
                 if (std.math.isNan(a)) return error.InvalidConversionToInteger;
-                self.stack.append(.{ .i64 = @intFromFloat(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @intFromFloat(a) }) catch return error.OutOfMemory;
             },
             .i64_trunc_f32_u => {
                 const a = self.popF32();
                 if (std.math.isNan(a) or a < 0) return error.InvalidConversionToInteger;
                 const u: u64 = @intFromFloat(a);
-                self.stack.append(.{ .i64 = @bitCast(u) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @bitCast(u) }) catch return error.OutOfMemory;
             },
             .i64_trunc_f64_s => {
                 const a = self.popF64();
                 if (std.math.isNan(a)) return error.InvalidConversionToInteger;
-                self.stack.append(.{ .i64 = @intFromFloat(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @intFromFloat(a) }) catch return error.OutOfMemory;
             },
             .i64_trunc_f64_u => {
                 const a = self.popF64();
                 if (std.math.isNan(a) or a < 0) return error.InvalidConversionToInteger;
                 const u: u64 = @intFromFloat(a);
-                self.stack.append(.{ .i64 = @bitCast(u) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @bitCast(u) }) catch return error.OutOfMemory;
             },
             .f32_convert_i32_s => {
                 const a = self.popI32();
-                self.stack.append(.{ .f32 = @floatFromInt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @floatFromInt(a) }) catch return error.OutOfMemory;
             },
             .f32_convert_i32_u => {
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .f32 = @floatFromInt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @floatFromInt(a) }) catch return error.OutOfMemory;
             },
             .f32_convert_i64_s => {
                 const a = self.popI64();
-                self.stack.append(.{ .f32 = @floatFromInt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @floatFromInt(a) }) catch return error.OutOfMemory;
             },
             .f32_convert_i64_u => {
                 const a: u64 = @bitCast(self.popI64());
-                self.stack.append(.{ .f32 = @floatFromInt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @floatFromInt(a) }) catch return error.OutOfMemory;
             },
             .f32_demote_f64 => {
                 const a = self.popF64();
-                self.stack.append(.{ .f32 = @floatCast(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @floatCast(a) }) catch return error.OutOfMemory;
             },
             .f64_convert_i32_s => {
                 const a = self.popI32();
-                self.stack.append(.{ .f64 = @floatFromInt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @floatFromInt(a) }) catch return error.OutOfMemory;
             },
             .f64_convert_i32_u => {
                 const a: u32 = @bitCast(self.popI32());
-                self.stack.append(.{ .f64 = @floatFromInt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @floatFromInt(a) }) catch return error.OutOfMemory;
             },
             .f64_convert_i64_s => {
                 const a = self.popI64();
-                self.stack.append(.{ .f64 = @floatFromInt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @floatFromInt(a) }) catch return error.OutOfMemory;
             },
             .f64_convert_i64_u => {
                 const a: u64 = @bitCast(self.popI64());
-                self.stack.append(.{ .f64 = @floatFromInt(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @floatFromInt(a) }) catch return error.OutOfMemory;
             },
             .f64_promote_f32 => {
                 const a = self.popF32();
-                self.stack.append(.{ .f64 = @floatCast(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @floatCast(a) }) catch return error.OutOfMemory;
             },
 
             // Reinterpret
             .i32_reinterpret_f32 => {
                 const a = self.popF32();
-                self.stack.append(.{ .i32 = @bitCast(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @bitCast(a) }) catch return error.OutOfMemory;
             },
             .i64_reinterpret_f64 => {
                 const a = self.popF64();
-                self.stack.append(.{ .i64 = @bitCast(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @bitCast(a) }) catch return error.OutOfMemory;
             },
             .f32_reinterpret_i32 => {
                 const a = self.popI32();
-                self.stack.append(.{ .f32 = @bitCast(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f32 = @bitCast(a) }) catch return error.OutOfMemory;
             },
             .f64_reinterpret_i64 => {
                 const a = self.popI64();
-                self.stack.append(.{ .f64 = @bitCast(a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .f64 = @bitCast(a) }) catch return error.OutOfMemory;
             },
 
             // Sign extension
             .i32_extend8_s => {
                 const a: i8 = @truncate(self.popI32());
-                self.stack.append(.{ .i32 = @as(i32, a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @as(i32, a) }) catch return error.OutOfMemory;
             },
             .i32_extend16_s => {
                 const a: i16 = @truncate(self.popI32());
-                self.stack.append(.{ .i32 = @as(i32, a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i32 = @as(i32, a) }) catch return error.OutOfMemory;
             },
             .i64_extend8_s => {
                 const a: i8 = @truncate(self.popI64());
-                self.stack.append(.{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
             },
             .i64_extend16_s => {
                 const a: i16 = @truncate(self.popI64());
-                self.stack.append(.{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
             },
             .i64_extend32_s => {
                 const a: i32 = @truncate(self.popI64());
-                self.stack.append(.{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, .{ .i64 = @as(i64, a) }) catch return error.OutOfMemory;
             },
 
             // Extended opcodes
