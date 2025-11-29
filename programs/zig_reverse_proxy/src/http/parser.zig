@@ -522,16 +522,14 @@ test "build request" {
     var buf: [256]u8 = undefined;
     var builder = Builder.init(&buf);
 
-    const request = Request{
+    var request = Request{
         .method = .GET,
         .uri = "/test",
         .version = .http_1_1,
-        .headers = .{
-            .{ .name = "Host", .value = "example.com" },
-            .{ .name = "Accept", .value = "*/*" },
-        } ++ .{.{ .name = "", .value = "" }} ** 62,
         .header_count = 2,
     };
+    request.headers[0] = .{ .name = "Host", .value = "example.com" };
+    request.headers[1] = .{ .name = "Accept", .value = "*/*" };
 
     try builder.writeRequest(&request);
     const result = builder.message();
