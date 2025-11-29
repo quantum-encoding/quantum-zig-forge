@@ -232,7 +232,7 @@ pub const WasiInstance = struct {
         module_name: []const u8,
         func_name: []const u8,
         args: []const Value,
-    ) Instance.TrapError!?Value {
+    ) interpreter.TrapError!?Value {
         const self: *WasiInstance = @ptrCast(@alignCast(ctx));
 
         // Only handle wasi_snapshot_preview1 and wasi_unstable
