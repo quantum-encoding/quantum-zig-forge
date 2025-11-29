@@ -207,6 +207,8 @@ pub const PageTree = struct {
         UnexpectedEof,
         InvalidObject,
         InvalidDict,
+        InvalidNumber,
+        UnexpectedToken,
         OutOfMemory,
     };
 
