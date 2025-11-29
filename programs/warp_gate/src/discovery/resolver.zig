@@ -347,7 +347,7 @@ pub const MdnsDiscovery = struct {
         return Self{
             .allocator = allocator,
             .socket = socket,
-            .discovered_peers = .{},
+            .discovered_peers = std.ArrayList(DiscoveredPeer).empty,
         };
     }
 
