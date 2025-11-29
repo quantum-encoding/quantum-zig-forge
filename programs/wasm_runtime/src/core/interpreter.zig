@@ -609,7 +609,7 @@ pub const Instance = struct {
                 const val2 = self.stack.pop() orelse return error.StackUnderflow;
                 const val1 = self.stack.pop() orelse return error.StackUnderflow;
 
-                self.stack.append(if (cond != 0) val1 else val2) catch return error.OutOfMemory;
+                self.stack.append(self.allocator, if (cond != 0) val1 else val2) catch return error.OutOfMemory;
             },
 
             // Variable access
