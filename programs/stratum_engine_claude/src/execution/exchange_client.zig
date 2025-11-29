@@ -440,17 +440,17 @@ pub const ExchangeClient = struct {
         errdefer posix.close(sockfd);
 
         // Step 2: DNS resolution using getaddrinfo
-        const c = @cImport({
+        const dns_c = @cImport({
             @cInclude("sys/types.h");
             @cInclude("sys/socket.h");
             @cInclude("netdb.h");
         });
 
-        var hints: c.struct_addrinfo = std.mem.zeroes(c.struct_addrinfo);
-        hints.ai_family = c.AF_INET;
-        hints.ai_socktype = c.SOCK_STREAM;
+        var hints: dns_c.struct_addrinfo = std.mem.zeroes(dns_c.struct_addrinfo);
+        hints.ai_family = dns_c.AF_INET;
+        hints.ai_socktype = dns_c.SOCK_STREAM;
 
-        var result: ?*c.struct_addrinfo = null;
+        var result: ?*dns_c.struct_addrinfo = null;
 
         // Convert hostname to null-terminated string
         const hostname_z = try std.posix.toPosixPath(parsed.host);
@@ -459,12 +459,12 @@ pub const ExchangeClient = struct {
 
         const port_z = try std.posix.toPosixPath(port_str);
 
-        const ret = c.getaddrinfo(&hostname_z, &port_z, &hints, &result);
+        const ret = dns_c.getaddrinfo(&hostname_z, &port_z, &hints, &result);
         if (ret != 0) {
             std.debug.print("❌ DNS resolution failed for {s}\n", .{parsed.host});
             return error.DnsResolutionFailed;
         }
-        defer c.freeaddrinfo(result);
+        defer dns_c.freeaddrinfo(result);
 
         if (result == null or result.?.ai_addr == null) {
             return error.NoAddressFound;
