@@ -32,7 +32,7 @@ pub const ValueEntry = struct {
 
     pub fn isExpired(self: *const ValueEntry) bool {
         if (self.expires_at) |exp| {
-            return std.time.milliTimestamp() > exp;
+            return currentTimeMs() > exp;
         }
         return false;
     }
@@ -378,7 +378,7 @@ pub const KVStore = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const now = std.time.milliTimestamp();
+        const now = currentTimeMs();
         self.version_counter += 1;
 
         const new_entry = ValueEntry{
@@ -434,7 +434,7 @@ pub const KVStore = struct {
             return false;
         }
 
-        const now = std.time.milliTimestamp();
+        const now = currentTimeMs();
         self.version_counter += 1;
 
         // Free old value
@@ -594,7 +594,7 @@ pub const KVStore = struct {
             const ttl = std.mem.readInt(u64, snapshot_data[offset..][0..8], .little);
             offset += 8;
 
-            const now = std.time.milliTimestamp();
+            const now = currentTimeMs();
             try self.data.put(self.allocator, key, ValueEntry{
                 .data = value,
                 .version = version,
