@@ -171,7 +171,7 @@ pub const Transport = struct {
         return Self{
             .allocator = allocator,
             .socket = socket,
-            .pending = std.ArrayList(PendingPacket).init(allocator),
+            .pending = std.ArrayList(PendingPacket).empty,
             .recv_buffer = std.AutoHashMap(u32, []u8).init(allocator),
         };
     }
