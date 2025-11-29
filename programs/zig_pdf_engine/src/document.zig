@@ -271,9 +271,17 @@ pub const Document = struct {
 
     /// Resolve an indirect object reference
     pub fn resolveRef(self: *Document, ref: ObjectRef) !Object {
-        const offset = self.xref_table.getOffset(ref.obj_num) orelse return error.ObjectNotFound;
+        const entry = self.xref_table.getEntry(ref.obj_num) orelse return error.ObjectNotFound;
 
-        var lex = Lexer.initAt(self.data, @intCast(offset));
+        if (!entry.in_use) return error.ObjectNotFound;
+
+        if (entry.compressed) {
+            // Object is in an object stream - extract it
+            return self.resolveCompressedObject(entry.stream_obj, entry.stream_idx);
+        }
+
+        // Regular uncompressed object
+        var lex = Lexer.initAt(self.data, @intCast(entry.offset));
 
         // Parse "obj_num gen_num obj"
         const obj_num_tok = lex.next() orelse return error.UnexpectedEof;
@@ -287,6 +295,94 @@ pub const Document = struct {
 
         // Parse the actual object
         return Object.parse(&lex);
+    }
+
+    /// Resolve an object from an object stream
+    fn resolveCompressedObject(self: *Document, stream_obj_num: u32, obj_index: u16) !Object {
+        // Get the object stream itself (must be uncompressed)
+        const stream_entry = self.xref_table.getEntry(stream_obj_num) orelse return error.ObjectNotFound;
+        if (stream_entry.compressed) return error.InvalidObject; // Object streams can't be nested
+
+        var lex = Lexer.initAt(self.data, @intCast(stream_entry.offset));
+
+        // Skip "obj_num gen_num obj"
+        _ = lex.next(); // obj_num
+        _ = lex.next(); // gen_num
+        _ = lex.next(); // obj
+
+        const stream_obj = Object.parse(&lex) catch return error.InvalidObject;
+
+        switch (stream_obj) {
+            .stream => |stream| {
+                return self.extractFromObjectStream(stream.dict, stream.data, obj_index);
+            },
+            else => return error.InvalidObject,
+        }
+    }
+
+    /// Extract an object from object stream data
+    fn extractFromObjectStream(self: *Document, dict_bytes: []const u8, stream_data: []const u8, obj_index: u16) !Object {
+        var parser = DictParser.init(dict_bytes);
+
+        // Verify /Type /ObjStm
+        if (parser.get("Type")) |type_obj| {
+            const type_name = type_obj.asName() orelse return error.InvalidObject;
+            if (!std.mem.eql(u8, type_name, "ObjStm")) return error.InvalidObject;
+        }
+
+        // /N - number of objects in stream
+        const n_obj = parser.get("N") orelse return error.InvalidObject;
+        const n: u32 = @intCast(n_obj.asInt() orelse return error.InvalidObject);
+
+        if (obj_index >= n) return error.ObjectNotFound;
+
+        // /First - byte offset of first object data
+        const first_obj = parser.get("First") orelse return error.InvalidObject;
+        const first: usize = @intCast(first_obj.asInt() orelse return error.InvalidObject);
+
+        // Decompress stream if needed
+        var decompressed: ?[]u8 = null;
+        defer if (decompressed) |d| self.allocator.free(d);
+
+        const data = blk: {
+            if (parser.get("Filter")) |filter_obj| {
+                const filter_name = filter_obj.asName() orelse break :blk stream_data;
+                if (std.mem.eql(u8, filter_name, "FlateDecode")) {
+                    decompressed = filters.FlateDecode.decode(self.allocator, stream_data) catch return error.InvalidObject;
+                    break :blk decompressed.?;
+                }
+            }
+            break :blk stream_data;
+        };
+
+        // Parse the header: pairs of (obj_num, offset) for each object
+        // The offsets are relative to /First
+        var header_lex = Lexer.init(data[0..first]);
+        var target_offset: usize = 0;
+        var found = false;
+
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const num_tok = header_lex.next() orelse break;
+            const off_tok = header_lex.next() orelse break;
+
+            if (num_tok.tag != .number or off_tok.tag != .number) break;
+
+            if (i == obj_index) {
+                target_offset = @intCast(off_tok.asInt() orelse 0);
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) return error.ObjectNotFound;
+
+        // Parse the object at the computed offset
+        const obj_start = first + target_offset;
+        if (obj_start >= data.len) return error.InvalidObject;
+
+        var obj_lex = Lexer.init(data[obj_start..]);
+        return Object.parse(&obj_lex);
     }
 
     /// Get raw stream data for an object (decompressed if needed)
