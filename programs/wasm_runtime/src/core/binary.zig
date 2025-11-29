@@ -707,7 +707,7 @@ fn parseCode(allocator: std.mem.Allocator, reader: *Reader) !Module.Code {
 
     return .{
         .locals = locals,
-        .body = reader.data[body_start .. reader.pos - code_start + body_start],
+        .body = reader.data[body_start..reader.pos],
     };
 }
 
