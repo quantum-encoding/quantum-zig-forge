@@ -59,6 +59,12 @@ pub const AudioEngine = struct {
     ring_buffer: AudioRingBuffer,
     backend: AlsaBackend,
 
+    // DSP processing
+    dsp_graph: DspGraph,
+    eq: ParametricEq,
+    eq_node: ProcessorNode,
+    dsp_enabled: bool,
+
     // Decoder state
     decoder: ?WavDecoder,
     decoder_thread: ?std.Thread,
