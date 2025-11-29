@@ -42,7 +42,10 @@ pub const XRefTable = struct {
         MissingTrailerRoot,
         InvalidTrailerSize,
         InvalidTrailerRoot,
-        XrefStreamNotImplemented,
+        InvalidXrefStream,
+        InvalidXrefStreamW,
+        InvalidXrefStreamIndex,
+        XrefDecompressFailed,
         OutOfMemory,
         UnexpectedToken,
     };
