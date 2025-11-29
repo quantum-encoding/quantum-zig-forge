@@ -4,12 +4,14 @@ const lexer = @import("lexer.zig");
 const xref = @import("xref.zig");
 const objects = @import("objects.zig");
 const filters = @import("filters.zig");
+const text_extract = @import("extract/text.zig");
 
 const Lexer = lexer.Lexer;
 const XRefTable = xref.XRefTable;
 const Object = objects.Object;
 const ObjectRef = objects.ObjectRef;
 const DictParser = objects.DictParser;
+const TextExtractor = text_extract.TextExtractor;
 
 /// PDF Document - zero-copy memory-mapped reader
 pub const Document = struct {
