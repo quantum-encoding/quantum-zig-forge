@@ -194,8 +194,7 @@ pub const Pty = struct {
     /// Check if child process is still alive
     pub fn isAlive(self: *const Self) bool {
         if (self.child_pid) |pid| {
-            var status: u32 = 0;
-            const result = posix.waitpid(pid, &status, posix.W.NOHANG);
+            const result = posix.waitpid(pid, posix.W.NOHANG);
             return result.pid == 0; // Returns 0 if still running
         }
         return false;
@@ -204,10 +203,9 @@ pub const Pty = struct {
     /// Wait for child process to exit
     pub fn wait(self: *Self) !u32 {
         if (self.child_pid) |pid| {
-            var status: u32 = 0;
-            _ = posix.waitpid(pid, &status, 0);
+            const result = posix.waitpid(pid, 0);
             self.child_pid = null;
-            return status;
+            return result.status.signal;
         }
         return 0;
     }
