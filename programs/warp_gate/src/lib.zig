@@ -46,6 +46,7 @@ pub const WarpSession = struct {
         idle,
         discovering,
         connecting,
+        connected,
         handshaking,
         transferring,
         completed,
