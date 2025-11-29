@@ -329,11 +329,11 @@ test "ascii hex decode with whitespace" {
 }
 
 test "ascii85 decode" {
-    // "Hello" in ASCII85 is "87cURD]i"
-    const encoded = "87cURD]i~>";
+    // "Test" (4 bytes) = full 5-char group "FCfN8"
+    const encoded = "FCfN8~>";
     const decoded = try Ascii85Decode.decode(std.testing.allocator, encoded);
     defer std.testing.allocator.free(decoded);
-    try std.testing.expectEqualStrings("Hello", decoded);
+    try std.testing.expectEqualStrings("Test", decoded);
 }
 
 test "flatedecode basic" {
