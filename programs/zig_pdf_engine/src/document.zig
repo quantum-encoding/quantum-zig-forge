@@ -237,8 +237,109 @@ pub const Document = struct {
 
     /// Extract text from a specific page (0-based index)
     pub fn extractPageText(self: *Document, page_index: usize) ![]u8 {
-        var page = try self.getPage(page_index);
-        return page.extractText();
+        // Get page dictionary reference
+        const page_ref = try self.getPageRef(page_index);
+        const page_obj = try self.resolveRef(page_ref);
+
+        switch (page_obj) {
+            .dict => |dict_bytes| {
+                // Get content stream
+                const content_data = try self.getPageContentStream(dict_bytes);
+                defer self.allocator.free(content_data);
+
+                // Extract text
+                var extractor = text_extract.TextExtractor.init(self.allocator);
+                return extractor.extract(content_data);
+            },
+            else => return error.InvalidObject,
+        }
+    }
+
+    /// Get page reference by index
+    fn getPageRef(self: *Document, page_index: usize) !ObjectRef {
+        const pages_ref = try self.getPagesRef();
+        var tree = PageTree.init(self.allocator, self.data, self.makeXrefGetter());
+        defer tree.deinit();
+
+        try tree.buildPageList(pages_ref);
+
+        if (page_index >= tree.page_refs.items.len) return error.PageNotFound;
+        return tree.page_refs.items[page_index];
+    }
+
+    /// Get decompressed content stream for a page dictionary
+    fn getPageContentStream(self: *Document, page_dict: []const u8) ![]u8 {
+        var parser = DictParser.init(page_dict);
+
+        const contents_obj = parser.get("Contents") orelse return error.NoContents;
+
+        switch (contents_obj) {
+            .reference => |ref| {
+                return self.getDecompressedStream(ref);
+            },
+            .array => |array_bytes| {
+                return self.concatenateContentStreams(array_bytes);
+            },
+            else => return error.InvalidContents,
+        }
+    }
+
+    /// Get decompressed stream data for a reference
+    fn getDecompressedStream(self: *Document, ref: ObjectRef) ![]u8 {
+        const obj = try self.resolveRef(ref);
+
+        switch (obj) {
+            .stream => |stream| {
+                var stream_parser = DictParser.init(stream.dict);
+
+                if (stream_parser.get("Filter")) |filter_obj| {
+                    const filter_name = filter_obj.asName() orelse return self.allocator.dupe(u8, stream.data);
+
+                    if (std.mem.eql(u8, filter_name, "FlateDecode")) {
+                        return filters.FlateDecode.decode(self.allocator, stream.data);
+                    } else if (std.mem.eql(u8, filter_name, "ASCII85Decode")) {
+                        return filters.Ascii85Decode.decode(self.allocator, stream.data);
+                    } else if (std.mem.eql(u8, filter_name, "ASCIIHexDecode")) {
+                        return filters.AsciiHexDecode.decode(self.allocator, stream.data);
+                    }
+                }
+
+                return self.allocator.dupe(u8, stream.data);
+            },
+            else => return error.NotAStream,
+        }
+    }
+
+    /// Concatenate multiple content streams
+    fn concatenateContentStreams(self: *Document, array_bytes: []const u8) ![]u8 {
+        var result = std.ArrayList(u8).empty;
+        errdefer result.deinit(self.allocator);
+
+        var lex = Lexer.init(array_bytes);
+
+        while (true) {
+            const num_tok = lex.next() orelse break;
+            if (num_tok.tag != .number) continue;
+
+            const gen_tok = lex.next() orelse break;
+            if (gen_tok.tag != .number) continue;
+
+            const r_tok = lex.next() orelse break;
+            if (r_tok.tag != .keyword_ref) continue;
+
+            const ref = ObjectRef{
+                .obj_num = @intCast(num_tok.asInt() orelse continue),
+                .gen_num = @intCast(gen_tok.asInt() orelse continue),
+            };
+
+            const stream_data = self.getDecompressedStream(ref) catch continue;
+            defer self.allocator.free(stream_data);
+
+            try result.appendSlice(self.allocator, stream_data);
+            try result.append(self.allocator, '\n');
+        }
+
+        return result.toOwnedSlice(self.allocator);
     }
 
     /// Extract text from all pages
