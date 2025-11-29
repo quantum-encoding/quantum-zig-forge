@@ -196,7 +196,13 @@ pub const TextExtractor = struct {
                 if (stack.items.len >= 2) {
                     const font_operand = &stack.items[stack.items.len - 2];
                     if (font_operand.* == .name) {
-                        self.current_font = font_operand.name;
+                        // Free previous owned font name
+                        if (self.current_font_owned) |old| {
+                            self.allocator.free(old);
+                        }
+                        // Make owned copy since operand will be freed
+                        self.current_font_owned = self.allocator.dupe(u8, font_operand.name) catch null;
+                        self.current_font = self.current_font_owned;
                     }
                 }
             },
