@@ -45,7 +45,7 @@ pub const RunawayProtection = struct {
             .daily_loss = Decimal.fromInt(0),
             .consecutive_losses = 0,
             .total_position_value = Decimal.fromInt(0),
-            .last_reset_time = std.time.timestamp(),
+            .last_reset_time = getTimestamp(),
             .is_halted = std.atomic.Value(bool).init(false),
             .halt_reason = null,
             .limits = limits,
@@ -84,7 +84,7 @@ pub const RunawayProtection = struct {
         }
 
         // Check order rate (orders per minute)
-        const now = std.time.timestamp();
+        const now = getTimestamp();
         try self.cleanOldTimestamps(now);
 
         if (self.order_timestamps.items.len >= self.limits.max_order_rate_per_minute) {
@@ -147,7 +147,7 @@ pub const RunawayProtection = struct {
 
     /// Check if we need to reset daily counters
     fn checkDailyReset(self: *Self) void {
-        const now = std.time.timestamp();
+        const now = getTimestamp();
         const hours_since_reset = @divTrunc(now - self.last_reset_time, 3600);
 
         if (hours_since_reset >= 24) {
