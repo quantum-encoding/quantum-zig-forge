@@ -3,11 +3,13 @@ const lexer = @import("../lexer.zig");
 const objects = @import("../objects.zig");
 const operators = @import("../render/operators.zig");
 const filters = @import("../filters.zig");
+const cmap_mod = @import("../cmap.zig");
 
 const Lexer = lexer.Lexer;
 const Token = lexer.Token;
 const Object = objects.Object;
 const Operator = operators.Operator;
+const CMap = cmap_mod.CMap;
 
 /// Text extraction from PDF content streams
 /// This is a "virtual renderer" that captures text instead of drawing pixels
