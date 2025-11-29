@@ -73,6 +73,23 @@ pub const WasmHandler = router.WasmHandler;
 pub const StaticResponse = router.StaticResponse;
 pub const RedirectConfig = router.RedirectConfig;
 
+pub const loadbalancer = @import("proxy/loadbalancer.zig");
+pub const LoadBalancer = loadbalancer.LoadBalancer;
+pub const LoadBalanceStrategy = loadbalancer.Strategy;
+
+// =============================================================================
+// Middleware
+// =============================================================================
+
+pub const middleware = @import("middleware/chain.zig");
+pub const MiddlewareChain = middleware.MiddlewareChain;
+pub const Middleware = middleware.Middleware;
+pub const MiddlewareContext = middleware.Context;
+pub const LoggingMiddleware = middleware.LoggingMiddleware;
+pub const CorsMiddleware = middleware.CorsMiddleware;
+pub const RateLimitMiddleware = middleware.RateLimitMiddleware;
+pub const SecurityHeadersMiddleware = middleware.SecurityHeadersMiddleware;
+
 // =============================================================================
 // WASM Edge Functions
 // =============================================================================
