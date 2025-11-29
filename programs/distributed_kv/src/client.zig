@@ -42,7 +42,7 @@ pub const GetResponse = struct {
     value: []u8,
     version: u64,
 
-    pub fn deinit(self: *GetResponse, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *const GetResponse, allocator: std.mem.Allocator) void {
         allocator.free(self.value);
     }
 };
