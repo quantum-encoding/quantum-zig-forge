@@ -1,6 +1,12 @@
 const std = @import("std");
 const Decimal = @import("decimal.zig").Decimal;
 
+/// Get current Unix timestamp (seconds since epoch)
+fn getTimestamp() i64 {
+    const ts = std.posix.clock_gettime(std.posix.CLOCK.REALTIME) catch return 0;
+    return ts.sec;
+}
+
 /// Runaway Protection System - Prevents catastrophic losses
 pub const RunawayProtection = struct {
     const Self = @This();
