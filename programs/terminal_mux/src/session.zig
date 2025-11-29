@@ -263,24 +263,27 @@ pub const Window = struct {
         const active = self.getActivePane();
         const rect = active.rect;
 
-        // Calculate new rects
-        const new_rects = switch (direction) {
-            .horizontal => rect.splitHorizontal(0.5),
-            .vertical => rect.splitVertical(0.5),
-        };
+        // Calculate new rects based on direction
+        var active_rect: Rect = undefined;
+        var new_rect: Rect = undefined;
+
+        switch (direction) {
+            .horizontal => {
+                const split_result = rect.splitHorizontal(0.5);
+                active_rect = split_result.left;
+                new_rect = split_result.right;
+            },
+            .vertical => {
+                const split_result = rect.splitVertical(0.5);
+                active_rect = split_result.top;
+                new_rect = split_result.bottom;
+            },
+        }
 
         // Resize active pane
-        const active_rect = switch (direction) {
-            .horizontal => new_rects.left,
-            .vertical => new_rects.top,
-        };
         try active.resize(active_rect);
 
         // Create new pane
-        const new_rect = switch (direction) {
-            .horizontal => new_rects.right,
-            .vertical => new_rects.bottom,
-        };
         const new_pane = try Pane.init(self.allocator, self.next_pane_id, new_rect, scrollback);
         self.next_pane_id += 1;
 
