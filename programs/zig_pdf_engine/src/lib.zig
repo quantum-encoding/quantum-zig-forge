@@ -14,6 +14,7 @@ pub const filters = @import("filters.zig");
 pub const page = @import("page.zig");
 pub const operators = @import("render/operators.zig");
 pub const text_extract = @import("extract/text.zig");
+pub const cmap = @import("cmap.zig");
 
 // Re-export main types
 pub const Document = document.Document;
