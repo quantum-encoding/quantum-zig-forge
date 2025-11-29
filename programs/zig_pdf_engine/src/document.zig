@@ -303,7 +303,7 @@ pub const Document = struct {
     }
 
     /// Parse Kids array and recurse
-    fn traversePageKids(self: *Document, kids_bytes: []const u8, page_refs: *std.ArrayList(ObjectRef)) !void {
+    fn traversePageKids(self: *Document, kids_bytes: []const u8, page_refs: *std.ArrayList(ObjectRef)) PageTreeError!void {
         var lex = Lexer.init(kids_bytes);
 
         while (true) {
