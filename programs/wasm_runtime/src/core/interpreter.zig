@@ -566,8 +566,7 @@ pub const Instance = struct {
 
             .@"return" => {
                 // Return from current function
-                if (self.call_stack.items.len > 0) {
-                    var frame = self.call_stack.pop();
+                if (self.call_stack.pop()) |*frame| {
                     frame.deinit();
                 }
                 // Signal to exit execute loop
