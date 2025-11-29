@@ -149,6 +149,16 @@ pub const Module = struct {
             self.allocator.free(cs.name);
         }
         self.allocator.free(self.custom_sections);
+
+        // Free data sections
+        for (self.datas) |d| {
+            self.allocator.free(d.init);
+            switch (d.mode) {
+                .active => |active| self.allocator.free(active.offset.instrs),
+                .passive => {},
+            }
+        }
+        self.allocator.free(self.datas);
     }
 
     /// Get function count (imports + defined)
