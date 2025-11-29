@@ -486,11 +486,11 @@ pub const Client = struct {
         const encoded = msg.encode(self.allocator) catch return ClientError.OutOfMemory;
         defer self.allocator.free(encoded);
 
-        stream.writeAll(encoded) catch return ClientError.ConnectionFailed;
+        _ = std.posix.send(stream, encoded, 0) catch return ClientError.ConnectionFailed;
 
         // Read response
         var header_buf: [13]u8 = undefined; // HEADER_SIZE = 13
-        const read = stream.read(&header_buf) catch return ClientError.ConnectionFailed;
+        const read = std.posix.recv(stream, &header_buf, 0) catch return ClientError.ConnectionFailed;
         if (read < 13) return ClientError.InvalidResponse;
 
         const header = rpc.Message.decodeHeader(&header_buf) catch return ClientError.InvalidResponse;
