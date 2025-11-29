@@ -249,12 +249,123 @@ pub const Document = struct {
                 const content_data = try self.getPageContentStream(dict_bytes);
                 defer self.allocator.free(content_data);
 
-                // Extract text
+                // Create text extractor
                 var extractor = text_extract.TextExtractor.init(self.allocator);
+                defer extractor.deinit();
+
+                // Load font CMaps from page resources
+                try self.loadPageFontCMaps(&extractor, dict_bytes);
+
+                // Extract text
                 return extractor.extract(content_data);
             },
             else => return error.InvalidObject,
         }
+    }
+
+    /// Load ToUnicode CMaps for all fonts in page resources
+    fn loadPageFontCMaps(self: *Document, extractor: *TextExtractor, page_dict: []const u8) !void {
+        var parser = DictParser.init(page_dict);
+
+        // Get /Resources
+        const resources_obj = parser.get("Resources") orelse return;
+
+        // Resolve if it's a reference
+        const resources_dict = switch (resources_obj) {
+            .reference => |ref| blk: {
+                const resolved = self.resolveRef(ref) catch return;
+                switch (resolved) {
+                    .dict => |d| break :blk d,
+                    else => return,
+                }
+            },
+            .dict => |d| d,
+            else => return,
+        };
+
+        // Get /Font dictionary
+        var res_parser = DictParser.init(resources_dict);
+        const font_obj = res_parser.get("Font") orelse return;
+
+        const font_dict = switch (font_obj) {
+            .reference => |ref| blk: {
+                const resolved = self.resolveRef(ref) catch return;
+                switch (resolved) {
+                    .dict => |d| break :blk d,
+                    else => return,
+                }
+            },
+            .dict => |d| d,
+            else => return,
+        };
+
+        // Iterate through fonts
+        try self.parseFontDict(extractor, font_dict);
+    }
+
+    /// Parse font dictionary and load ToUnicode CMaps
+    fn parseFontDict(self: *Document, extractor: *TextExtractor, font_dict: []const u8) !void {
+        var lex = Lexer.init(font_dict);
+
+        while (lex.next()) |token| {
+            if (token.tag == .name) {
+                const font_name = token.nameValue();
+
+                // Next should be the font reference or dict
+                const next_tok = lex.next() orelse break;
+
+                const font_obj = switch (next_tok.tag) {
+                    .number => blk: {
+                        // It's a reference: num gen R
+                        const gen_tok = lex.next() orelse break;
+                        if (gen_tok.tag != .number) continue;
+                        const r_tok = lex.next() orelse break;
+                        if (r_tok.tag != .keyword_ref) continue;
+
+                        const ref = ObjectRef{
+                            .obj_num = @intCast(next_tok.asInt() orelse continue),
+                            .gen_num = @intCast(gen_tok.asInt() orelse continue),
+                        };
+                        break :blk self.resolveRef(ref) catch continue;
+                    },
+                    .dict_start => blk: {
+                        // Inline dict - parse it
+                        break :blk Object.parse(&lex) catch continue;
+                    },
+                    else => continue,
+                };
+
+                // Look for /ToUnicode in the font object
+                switch (font_obj) {
+                    .dict => |fd| {
+                        try self.loadFontToUnicode(extractor, font_name, fd);
+                    },
+                    else => {},
+                }
+            }
+        }
+    }
+
+    /// Load ToUnicode CMap for a specific font
+    fn loadFontToUnicode(self: *Document, extractor: *TextExtractor, font_name: []const u8, font_dict: []const u8) !void {
+        var parser = DictParser.init(font_dict);
+
+        const tounicode_obj = parser.get("ToUnicode") orelse return;
+
+        const tounicode_ref = tounicode_obj.asRef() orelse return;
+
+        // Get the ToUnicode stream
+        const stream_data = self.getDecompressedStream(tounicode_ref) catch return;
+        defer self.allocator.free(stream_data);
+
+        // Parse the CMap
+        var cmap = CMap.parse(self.allocator, stream_data) catch return;
+
+        // Allocate on heap to store in extractor
+        const cmap_ptr = try self.allocator.create(CMap);
+        cmap_ptr.* = cmap;
+
+        try extractor.addFontCMap(font_name, cmap_ptr);
     }
 
     /// Get page reference by index - traverses page tree properly handling compressed objects
