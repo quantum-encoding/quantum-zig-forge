@@ -498,6 +498,8 @@ test {
     _ = backend;
     _ = router;
     _ = edge;
+    _ = loadbalancer;
+    _ = middleware;
 }
 
 test "proxy server initialization" {
