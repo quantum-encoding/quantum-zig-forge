@@ -68,10 +68,13 @@ fn printUsage() void {
         \\Play Options:
         \\  --device <name>  Audio device (default: "default")
         \\  --buffer <ms>    Buffer size in milliseconds
+        \\  --eq <preset>    Apply EQ preset (flat, bass, treble, vocal,
+        \\                   electronic, rock, jazz, classical)
         \\
         \\Examples:
         \\  audio-forge play music.wav
         \\  audio-forge play music.wav --device hw:0
+        \\  audio-forge play music.wav --eq bass
         \\  audio-forge info track.wav
         \\
     ;
