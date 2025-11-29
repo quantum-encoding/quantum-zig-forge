@@ -253,7 +253,7 @@ pub const Transport = struct {
             .sequence = seq,
             .ack = self.recv_seq,
             .flags = .{ .data = true, .ack_flag = true },
-            .window = WINDOW_SIZE - @as(u16, @intCast(self.pending.items.len)),
+            .window = @as(u16, WINDOW_SIZE) - @as(u16, @intCast(self.pending.items.len)),
             .checksum = 0,
             .length = @intCast(payload.len),
         };
