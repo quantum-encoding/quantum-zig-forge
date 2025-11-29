@@ -266,7 +266,7 @@ pub const PageTree = struct {
         }
     }
 
-    fn traverseKids(self: *PageTree, kids_bytes: []const u8) !void {
+    fn traverseKids(self: *PageTree, kids_bytes: []const u8) TraverseError!void {
         var lex = Lexer.init(kids_bytes);
 
         while (true) {
