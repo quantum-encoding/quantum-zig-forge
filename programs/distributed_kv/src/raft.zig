@@ -343,7 +343,7 @@ pub const RaftNode = struct {
         id: NodeId,
         config: ClusterConfig,
     ) RaftNode {
-        var prng = std.Random.DefaultPrng.init(@bitCast(std.time.milliTimestamp()));
+        var prng = std.Random.DefaultPrng.init(@bitCast(currentTimeMs()));
 
         return RaftNode{
             .allocator = allocator,
@@ -357,7 +357,7 @@ pub const RaftNode = struct {
             .last_applied = 0,
             .peer_states = .empty,
             .election_timeout_ms = ELECTION_TIMEOUT_MIN_MS + prng.random().uintLessThan(u64, ELECTION_TIMEOUT_MAX_MS - ELECTION_TIMEOUT_MIN_MS),
-            .last_heartbeat = std.time.milliTimestamp(),
+            .last_heartbeat = currentTimeMs(),
             .random = prng.random(),
             .transport = null,
             .state_machine = null,
@@ -395,7 +395,7 @@ pub const RaftNode = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const now = std.time.milliTimestamp();
+        const now = currentTimeMs();
         const elapsed = @as(u64, @intCast(now - self.last_heartbeat));
 
         switch (self.state) {
@@ -423,7 +423,7 @@ pub const RaftNode = struct {
         self.current_term += 1;
         self.state = .candidate;
         self.voted_for = self.id;
-        self.last_heartbeat = std.time.milliTimestamp();
+        self.last_heartbeat = currentTimeMs();
         self.resetElectionTimeout();
 
         // Persist vote
@@ -472,7 +472,7 @@ pub const RaftNode = struct {
     /// Transition to leader state
     fn becomeLeader(self: *RaftNode) void {
         self.state = .leader;
-        self.last_heartbeat = std.time.milliTimestamp();
+        self.last_heartbeat = currentTimeMs();
 
         // Initialize peer states
         const last_index = self.getLastLogIndex();
@@ -481,7 +481,7 @@ pub const RaftNode = struct {
                 .next_index = last_index + 1,
                 .match_index = 0,
                 .vote_granted = false,
-                .last_contact = std.time.milliTimestamp(),
+                .last_contact = currentTimeMs(),
             }) catch {};
         }
 
@@ -498,7 +498,7 @@ pub const RaftNode = struct {
         self.state = .follower;
         self.voted_for = null;
         self.resetElectionTimeout();
-        self.last_heartbeat = std.time.milliTimestamp();
+        self.last_heartbeat = currentTimeMs();
     }
 
     /// Send heartbeat/append entries to all followers
@@ -580,7 +580,7 @@ pub const RaftNode = struct {
         if (can_vote and log_ok) {
             self.voted_for = req.candidate_id;
             response.vote_granted = true;
-            self.last_heartbeat = std.time.milliTimestamp();
+            self.last_heartbeat = currentTimeMs();
 
             // Persist vote
             if (self.wal_writer) |w| {
@@ -613,7 +613,7 @@ pub const RaftNode = struct {
                     .next_index = 1,
                     .match_index = 0,
                     .vote_granted = true,
-                    .last_contact = std.time.milliTimestamp(),
+                    .last_contact = currentTimeMs(),
                 }) catch {};
             }
 
@@ -652,7 +652,7 @@ pub const RaftNode = struct {
             if (self.state != .follower or req.term > self.current_term) {
                 self.stepDown(req.term);
             }
-            self.last_heartbeat = std.time.milliTimestamp();
+            self.last_heartbeat = currentTimeMs();
         }
 
         response.term = self.current_term;
@@ -723,7 +723,7 @@ pub const RaftNode = struct {
             const new_match = peer.next_index - 1 + MAX_ENTRIES_PER_RPC; // Approximate
             peer.match_index = @max(peer.match_index, @min(new_match, self.getLastLogIndex()));
             peer.next_index = peer.match_index + 1;
-            peer.last_contact = std.time.milliTimestamp();
+            peer.last_contact = currentTimeMs();
 
             // Try to advance commit index
             self.advanceCommitIndex();
