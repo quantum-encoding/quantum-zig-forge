@@ -12,6 +12,7 @@ pub const ring_buffer = @import("ring_buffer.zig");
 pub const engine = @import("engine.zig");
 pub const codec = @import("codec/mod.zig");
 pub const backend = @import("backend/mod.zig");
+pub const dsp = @import("dsp/mod.zig");
 
 // Re-export main types
 pub const AudioRingBuffer = ring_buffer.AudioRingBuffer;
