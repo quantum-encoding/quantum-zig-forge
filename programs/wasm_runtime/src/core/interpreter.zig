@@ -241,7 +241,7 @@ pub const Instance = struct {
             .labels = .empty,
             .memories = &.{},
             .globals = &.{},
-            .host_funcs = std.StringHashMap(*const fn (*Instance, []const Value) TrapError!?Value){},
+            .host_funcs = std.StringHashMap(*const fn (*Instance, []const Value) TrapError!?Value).init(allocator),
         };
 
         // Initialize memories
