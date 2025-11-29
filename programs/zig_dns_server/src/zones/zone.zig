@@ -262,7 +262,7 @@ pub const ZoneParser = struct {
         }
     }
 
-    fn parseDirective(self: *ZoneParser, line: []const u8) !void {
+    fn parseDirective(self: *ZoneParser, line: []const u8, zone: *Zone) !void {
         var tokens = std.mem.tokenizeAny(u8, line, " \t");
 
         const directive = tokens.next() orelse return;
@@ -271,6 +271,8 @@ pub const ZoneParser = struct {
             if (tokens.next()) |origin_str| {
                 self.origin = try Name.fromString(origin_str);
                 self.current_name = self.origin;
+                // Update zone origin
+                zone.origin = self.origin;
             }
         } else if (std.mem.eql(u8, directive, "$TTL")) {
             if (tokens.next()) |ttl_str| {
