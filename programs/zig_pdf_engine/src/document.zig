@@ -359,7 +359,7 @@ pub const Document = struct {
         defer self.allocator.free(stream_data);
 
         // Parse the CMap
-        var cmap = CMap.parse(self.allocator, stream_data) catch return;
+        const cmap = CMap.parse(self.allocator, stream_data) catch return;
 
         // Allocate on heap to store in extractor
         const cmap_ptr = try self.allocator.create(CMap);
