@@ -427,7 +427,7 @@ pub const MdnsDiscovery = struct {
                     .last_seen = std.time.timestamp(),
                 };
 
-                try self.discovered_peers.append(peer);
+                try self.discovered_peers.append(self.allocator, peer);
                 return peer;
             }
         }
