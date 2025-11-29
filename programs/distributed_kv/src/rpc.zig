@@ -228,7 +228,7 @@ pub const ConnectionPool = struct {
         for (self.connections.items) |*conn| {
             if (!conn.in_use) {
                 conn.in_use = true;
-                conn.last_used = std.time.milliTimestamp();
+                conn.last_used = currentTimeMs();
                 return conn.socket;
             }
         }
@@ -255,7 +255,7 @@ pub const ConnectionPool = struct {
         for (self.connections.items) |*conn| {
             if (conn.socket == sock) {
                 conn.in_use = false;
-                conn.last_used = std.time.milliTimestamp();
+                conn.last_used = currentTimeMs();
                 return;
             }
         }
