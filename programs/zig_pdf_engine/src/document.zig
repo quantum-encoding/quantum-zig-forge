@@ -6,6 +6,7 @@ const objects = @import("objects.zig");
 const filters = @import("filters.zig");
 const text_extract = @import("extract/text.zig");
 const page_mod = @import("page.zig");
+const cmap_mod = @import("cmap.zig");
 
 const Lexer = lexer.Lexer;
 const XRefTable = xref.XRefTable;
@@ -15,6 +16,7 @@ const DictParser = objects.DictParser;
 const TextExtractor = text_extract.TextExtractor;
 const Page = page_mod.Page;
 const PageTree = page_mod.PageTree;
+const CMap = cmap_mod.CMap;
 
 /// PDF Document - zero-copy memory-mapped reader
 pub const Document = struct {
