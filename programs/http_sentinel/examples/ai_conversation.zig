@@ -51,7 +51,7 @@ fn runConversationWithDeepSeek(allocator: std.mem.Allocator) !void {
     const api_key = try std.process.getEnvVarOwned(allocator, "DEEPSEEK_API_KEY");
     defer allocator.free(api_key);
 
-    var client = DeepSeekClient.init(allocator, api_key);
+    var client = try DeepSeekClient.init(allocator, api_key);
     defer client.deinit();
 
     var conversation = try ConversationContext.init(allocator);

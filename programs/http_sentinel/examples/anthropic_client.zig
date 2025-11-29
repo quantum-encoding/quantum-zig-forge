@@ -21,9 +21,9 @@ const AnthropicClient = struct {
     api_key: []const u8,
     base_url: []const u8 = "https://api.anthropic.com",
     
-    pub fn init(allocator: std.mem.Allocator, api_key: []const u8) AnthropicClient {
+    pub fn init(allocator: std.mem.Allocator, api_key: []const u8) !AnthropicClient {
         return AnthropicClient{
-            .http_client = HttpClient.init(allocator),
+            .http_client = try HttpClient.init(allocator),
             .api_key = api_key,
         };
     }
@@ -204,22 +204,22 @@ const AnthropicClient = struct {
     
     fn escapeJsonString(self: *AnthropicClient, allocator: std.mem.Allocator, input: []const u8) ![]u8 {
         _ = self;
-        
-        var result = std.ArrayList(u8){};
+
+        var result = std.ArrayList(u8).empty;
         defer result.deinit(allocator);
-        
+
         for (input) |char| {
             switch (char) {
-                '"' => try result.appendSlice("\\\""),
-                '\\' => try result.appendSlice("\\\\"),
-                '\n' => try result.appendSlice("\\n"),
-                '\r' => try result.appendSlice("\\r"),
-                '\t' => try result.appendSlice("\\t"),
-                else => try result.append(char),
+                '"' => try result.appendSlice(allocator, "\\\""),
+                '\\' => try result.appendSlice(allocator, "\\\\"),
+                '\n' => try result.appendSlice(allocator, "\\n"),
+                '\r' => try result.appendSlice(allocator, "\\r"),
+                '\t' => try result.appendSlice(allocator, "\\t"),
+                else => try result.append(allocator, char),
             }
         }
-        
-        return result.toOwnedSlice();
+
+        return result.toOwnedSlice(allocator);
     }
 };
 

@@ -90,12 +90,12 @@ fn demoClaudeClient(
     std.debug.print("Model: {s}\n", .{config.model});
     std.debug.print("Prompt: {s}\n\n", .{prompt});
 
-    const start = std.time.milliTimestamp();
+    const start = std.time.Instant.now() catch unreachable;
     var response = client.sendMessage(prompt, config) catch |err| {
         std.debug.print("❌ Error: {any}\n", .{err});
         return;
     };
-    const elapsed = std.time.milliTimestamp() - start;
+    const elapsed = (std.time.Instant.now() catch unreachable).since(start) / std.time.ns_per_ms;
 
     std.debug.print("Response:\n{s}\n\n", .{response.message.content});
     std.debug.print("Tokens: {} in, {} out ({} total)\n", .{
@@ -145,12 +145,12 @@ fn demoDeepSeekClient(
     std.debug.print("Model: {s}\n", .{config.model});
     std.debug.print("Prompt: {s}\n\n", .{prompt});
 
-    const start = std.time.milliTimestamp();
+    const start = std.time.Instant.now() catch unreachable;
     var response = client.sendMessage(prompt, config) catch |err| {
         std.debug.print("❌ Error: {any}\n", .{err});
         return;
     };
-    const elapsed = std.time.milliTimestamp() - start;
+    const elapsed = (std.time.Instant.now() catch unreachable).since(start) / std.time.ns_per_ms;
 
     std.debug.print("Response:\n{s}\n\n", .{response.message.content});
     std.debug.print("Tokens: {} in, {} out ({} total)\n", .{
@@ -198,12 +198,12 @@ fn demoGeminiClient(
     std.debug.print("Model: {s}\n", .{config.model});
     std.debug.print("Prompt: {s}\n\n", .{prompt});
 
-    const start = std.time.milliTimestamp();
+    const start = std.time.Instant.now() catch unreachable;
     var response = client.sendMessage(prompt, config) catch |err| {
         std.debug.print("❌ Error: {any}\n", .{err});
         return;
     };
-    const elapsed = std.time.milliTimestamp() - start;
+    const elapsed = (std.time.Instant.now() catch unreachable).since(start) / std.time.ns_per_ms;
 
     std.debug.print("Response:\n{s}\n\n", .{response.message.content});
     std.debug.print("Tokens: {} total\n", .{response.usage.output_tokens});
@@ -242,12 +242,12 @@ fn demoGrokClient(
     std.debug.print("Model: {s}\n", .{config.model});
     std.debug.print("Prompt: {s}\n\n", .{prompt});
 
-    const start = std.time.milliTimestamp();
+    const start = std.time.Instant.now() catch unreachable;
     var response = client.sendMessage(prompt, config) catch |err| {
         std.debug.print("❌ Error: {any}\n", .{err});
         return;
     };
-    const elapsed = std.time.milliTimestamp() - start;
+    const elapsed = (std.time.Instant.now() catch unreachable).since(start) / std.time.ns_per_ms;
 
     std.debug.print("Response:\n{s}\n\n", .{response.message.content});
     std.debug.print("Tokens: {} in, {} out ({} total)\n", .{
@@ -295,13 +295,13 @@ fn demoVertexClient(
     std.debug.print("Project: {s}\n", .{project_id});
     std.debug.print("Prompt: {s}\n\n", .{prompt});
 
-    const start = std.time.milliTimestamp();
+    const start = std.time.Instant.now() catch unreachable;
     var response = client.sendMessage(prompt, config) catch |err| {
         std.debug.print("❌ Error: {any}\n", .{err});
         std.debug.print("   Make sure you've run: gcloud auth login\n", .{});
         return;
     };
-    const elapsed = std.time.milliTimestamp() - start;
+    const elapsed = (std.time.Instant.now() catch unreachable).since(start) / std.time.ns_per_ms;
 
     std.debug.print("Response:\n{s}\n\n", .{response.message.content});
     std.debug.print("Tokens: {} total\n", .{response.usage.output_tokens});
