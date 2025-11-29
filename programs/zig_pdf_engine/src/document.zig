@@ -177,6 +177,95 @@ pub const Document = struct {
         return self.xref_table.trailer.encrypt != null;
     }
 
+    /// Get the Pages tree root reference
+    fn getPagesRef(self: *Document) !ObjectRef {
+        const catalog = try self.getCatalog();
+        switch (catalog) {
+            .dict => |dict_bytes| {
+                var parser = DictParser.init(dict_bytes);
+                const pages_obj = parser.get("Pages") orelse return error.MissingPages;
+                return pages_obj.asRef() orelse error.InvalidPages;
+            },
+            else => return error.InvalidCatalog,
+        }
+    }
+
+    /// Create a function pointer for xref lookup (used by Page/PageTree)
+    fn makeXrefGetter(self: *Document) *const fn (u32) ?u64 {
+        // We need to capture self in a static way for the function pointer.
+        // Since Zig doesn't support closures, we use a workaround with
+        // thread-local storage for the document pointer.
+        const Wrapper = struct {
+            threadlocal var doc: ?*Document = null;
+
+            fn getOffset(obj_num: u32) ?u64 {
+                const d = doc orelse return null;
+                return d.xref_table.getOffset(obj_num);
+            }
+        };
+        Wrapper.doc = self;
+        return &Wrapper.getOffset;
+    }
+
+    /// Get a specific page by index (0-based)
+    pub fn getPage(self: *Document, page_index: usize) !Page {
+        // Build page tree to find the page
+        const pages_ref = try self.getPagesRef();
+        var tree = PageTree.init(self.allocator, self.data, self.makeXrefGetter());
+        defer tree.deinit();
+
+        try tree.buildPageList(pages_ref);
+
+        if (tree.getPage(page_index)) |p| {
+            return p;
+        }
+        return error.PageNotFound;
+    }
+
+    /// Extract text from a specific page (0-based index)
+    pub fn extractPageText(self: *Document, page_index: usize) ![]u8 {
+        var page = try self.getPage(page_index);
+        return page.extractText();
+    }
+
+    /// Extract text from all pages
+    pub fn extractAllText(self: *Document) ![]u8 {
+        const page_count = try self.getPageCount();
+        var result = std.ArrayList(u8).empty;
+        errdefer result.deinit(self.allocator);
+
+        // Build page tree once
+        const pages_ref = try self.getPagesRef();
+        var tree = PageTree.init(self.allocator, self.data, self.makeXrefGetter());
+        defer tree.deinit();
+        try tree.buildPageList(pages_ref);
+
+        for (0..page_count) |i| {
+            if (tree.getPage(i)) |*pg| {
+                var page = pg.*;
+                const text = page.extractText() catch |err| {
+                    // Skip pages that fail to extract
+                    std.debug.print("Warning: Failed to extract page {d}: {}\n", .{ i + 1, err });
+                    continue;
+                };
+                defer self.allocator.free(text);
+
+                try result.appendSlice(self.allocator, text);
+
+                // Add page separator if not last page
+                if (i < page_count - 1) {
+                    try result.appendSlice(self.allocator, "\n\n--- Page ");
+                    var buf: [16]u8 = undefined;
+                    const num_str = std.fmt.bufPrint(&buf, "{d}", .{i + 2}) catch "?";
+                    try result.appendSlice(self.allocator, num_str);
+                    try result.appendSlice(self.allocator, " ---\n\n");
+                }
+            }
+        }
+
+        return result.toOwnedSlice(self.allocator);
+    }
+
     /// Resolve an indirect object reference
     pub fn resolveRef(self: *Document, ref: ObjectRef) !Object {
         const offset = self.xref_table.getOffset(ref.obj_num) orelse return error.ObjectNotFound;
