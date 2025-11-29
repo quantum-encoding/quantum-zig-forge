@@ -299,6 +299,11 @@ pub const AudioEngine = struct {
             @memset(buffer[samples_read..], 0);
         }
 
+        // Apply DSP processing if enabled
+        if (self.dsp_enabled) {
+            self.dsp_graph.process(buffer);
+        }
+
         // Update position
         _ = self.frames_played.fetchAdd(frames_read, .acq_rel);
     }
