@@ -21,7 +21,6 @@
 
 const std = @import("std");
 const posix = std.posix;
-const net = std.Io.net;
 const Transport = @import("../network/transport.zig").Transport;
 const Endpoint = @import("../network/transport.zig").Endpoint;
 
