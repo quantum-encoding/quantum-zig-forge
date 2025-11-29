@@ -273,7 +273,7 @@ pub const Transport = struct {
         try self.pending.append(self.allocator, .{
             .data = packet,
             .sequence = seq,
-            .sent_time = std.time.milliTimestamp(),
+            .sent_time = milliTimestamp(),
             .retries = 0,
         });
 
@@ -402,7 +402,7 @@ pub const Transport = struct {
     }
 
     fn retransmitExpired(self: *Self) !void {
-        const now = std.time.milliTimestamp();
+        const now = milliTimestamp();
 
         for (self.pending.items) |*pkt| {
             if (now - pkt.sent_time > RETRY_TIMEOUT_MS) {
