@@ -166,7 +166,7 @@ pub fn main() !void {
 
     // Wait for signal
     while (node.running.load(.acquire)) {
-        std.time.sleep(1 * std.time.ns_per_s);
+        std.posix.nanosleep(1 * std.time.ns_per_s);
 
         // Print status periodically
         const state = node.getState();
