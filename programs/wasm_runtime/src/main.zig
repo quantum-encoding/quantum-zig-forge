@@ -118,6 +118,9 @@ fn runCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
     };
     defer wasi_instance.deinit();
 
+    // Set up import resolver (must be done after instance is at final location)
+    wasi_instance.setupImports();
+
     print("Running {s}...\n", .{entry_name});
 
     // Run
