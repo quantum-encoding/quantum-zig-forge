@@ -232,19 +232,62 @@ pub const TextExtractor = struct {
     }
 
     fn appendTextFromOperand(self: *TextExtractor, result: *std.ArrayList(u8), operand: *const Operand) !void {
+        const maybe_cmap = self.getCurrentCMap();
+
         switch (operand.*) {
             .literal_string => |s| {
                 // Decode string (handle escapes, encoding)
                 const decoded = try decodePdfString(self.allocator, s);
                 defer self.allocator.free(decoded);
-                try result.appendSlice(self.allocator, decoded);
+
+                if (maybe_cmap) |cmap| {
+                    // Apply CMap to decode CID characters
+                    try self.applyCMapToText(result, decoded, cmap);
+                } else {
+                    try result.appendSlice(self.allocator, decoded);
+                }
             },
             .hex_string => |h| {
                 const decoded = try filters.AsciiHexDecode.decode(self.allocator, h);
                 defer self.allocator.free(decoded);
-                try result.appendSlice(self.allocator, decoded);
+
+                if (maybe_cmap) |cmap| {
+                    try self.applyCMapToText(result, decoded, cmap);
+                } else {
+                    try result.appendSlice(self.allocator, decoded);
+                }
             },
             else => {},
+        }
+    }
+
+    /// Apply CMap to convert CID codes to Unicode
+    fn applyCMapToText(self: *TextExtractor, result: *std.ArrayList(u8), data: []const u8, cmap: *const CMap) !void {
+        var buf: [8]u8 = undefined;
+        var i: usize = 0;
+
+        while (i < data.len) {
+            // Try 2-byte code first (most CID fonts use 2-byte encoding)
+            if (i + 1 < data.len) {
+                const code16: u32 = (@as(u32, data[i]) << 8) | data[i + 1];
+                if (cmap.mapCodeToBuffer(code16, &buf)) |len| {
+                    try result.appendSlice(self.allocator, buf[0..len]);
+                    i += 2;
+                    continue;
+                }
+            }
+
+            // Try single-byte code
+            const code8: u32 = data[i];
+            if (cmap.mapCodeToBuffer(code8, &buf)) |len| {
+                try result.appendSlice(self.allocator, buf[0..len]);
+            } else {
+                // No mapping - output as-is if printable, otherwise skip
+                if (data[i] >= 0x20 and data[i] < 0x7F) {
+                    try result.append(self.allocator, data[i]);
+                }
+            }
+            i += 1;
         }
     }
 
