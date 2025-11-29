@@ -181,7 +181,7 @@ pub const Transport = struct {
         for (self.pending.items) |pkt| {
             self.allocator.free(pkt.data);
         }
-        self.pending.deinit();
+        self.pending.deinit(self.allocator);
 
         // Free receive buffer
         var it = self.recv_buffer.iterator();
