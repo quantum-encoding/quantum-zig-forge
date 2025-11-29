@@ -269,8 +269,11 @@ pub const Document = struct {
         return page_refs.items[page_index];
     }
 
+    /// Error set for page tree traversal
+    const PageTreeError = error{OutOfMemory};
+
     /// Recursively traverse the page tree collecting page references
-    fn traversePageTree(self: *Document, node_ref: ObjectRef, page_refs: *std.ArrayList(ObjectRef)) !void {
+    fn traversePageTree(self: *Document, node_ref: ObjectRef, page_refs: *std.ArrayList(ObjectRef)) PageTreeError!void {
         const node_obj = self.resolveRef(node_ref) catch return;
 
         switch (node_obj) {
