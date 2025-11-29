@@ -226,12 +226,15 @@ fn findStartXref(data: []const u8) !usize {
     const search_start = data.len - search_len;
     const needle = "startxref";
 
-    var i: usize = search_len;
-    while (i >= needle.len) {
-        i -= 1;
+    if (search_len < needle.len) return error.StartXrefNotFound;
+
+    var i: usize = search_len - needle.len;
+    while (true) {
         if (std.mem.eql(u8, data[search_start + i ..][0..needle.len], needle)) {
             return search_start + i;
         }
+        if (i == 0) break;
+        i -= 1;
     }
     return error.StartXrefNotFound;
 }
