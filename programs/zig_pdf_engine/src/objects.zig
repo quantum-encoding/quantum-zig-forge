@@ -298,7 +298,10 @@ test "parse reference" {
 test "parse array" {
     var lex = Lexer.init("[1 2 3]");
     const obj = try Object.parse(&lex);
-    try std.testing.expectEqual(Object.array, @as(@TypeOf(obj), obj));
+    switch (obj) {
+        .array => {},
+        else => return error.ExpectedArray,
+    }
 }
 
 test "parse dictionary" {
