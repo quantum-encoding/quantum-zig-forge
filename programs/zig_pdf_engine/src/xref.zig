@@ -411,6 +411,19 @@ pub const XRefTable = struct {
     }
 };
 
+/// Read a big-endian integer field from xref stream data
+fn readXrefField(data: []const u8, width: u8) u64 {
+    if (width == 0) return 0;
+    if (width > data.len) return 0;
+
+    var result: u64 = 0;
+    var i: usize = 0;
+    while (i < width) : (i += 1) {
+        result = (result << 8) | data[i];
+    }
+    return result;
+}
+
 /// Find "startxref" keyword from end of file
 fn findStartXref(data: []const u8) !usize {
     // Search backwards from end (startxref is in last 1024 bytes typically)
