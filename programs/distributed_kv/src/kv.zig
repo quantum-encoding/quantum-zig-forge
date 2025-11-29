@@ -374,7 +374,7 @@ pub const KVStore = struct {
     }
 
     /// Apply a Set operation
-    fn applySet(self: *KVStore, key: []const u8, value: []const u8, ttl_ms: ?u64) !void {
+    pub fn applySet(self: *KVStore, key: []const u8, value: []const u8, ttl_ms: ?u64) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
