@@ -143,10 +143,7 @@ pub const WarpSession = struct {
         // Receive and decrypt chunks
         while (true) {
             if (self.transport) |*t| {
-                const encrypted = t.recv() catch |err| switch (err) {
-                    error.EndOfStream => break,
-                    else => return err,
-                };
+                const encrypted = try t.recv() orelse break;
 
                 const decrypted = try crypto.decrypt(&self.encryption_key, encrypted);
                 try stream.writeChunk(decrypted);
