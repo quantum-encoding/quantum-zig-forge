@@ -14,6 +14,12 @@
 const std = @import("std");
 const posix = std.posix;
 
+/// Get current timestamp in milliseconds (monotonic)
+fn milliTimestamp() i64 {
+    const ts = posix.clock_gettime(.MONOTONIC) catch return 0;
+    return @as(i64, ts.sec) * 1000 + @divFloor(ts.nsec, 1_000_000);
+}
+
 pub const MAX_PACKET_SIZE: usize = 1400; // MTU-safe
 pub const HEADER_SIZE: usize = 16;
 pub const MAX_PAYLOAD_SIZE: usize = MAX_PACKET_SIZE - HEADER_SIZE;
