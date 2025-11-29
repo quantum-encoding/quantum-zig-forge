@@ -248,7 +248,7 @@ pub const ZoneParser = struct {
 
             // Handle directives
             if (trimmed[0] == '$') {
-                try self.parseDirective(trimmed);
+                try self.parseDirective(trimmed, zone);
                 continue;
             }
 
