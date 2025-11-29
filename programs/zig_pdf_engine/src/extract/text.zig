@@ -51,6 +51,11 @@ pub const TextExtractor = struct {
             self.allocator.free(name);
         }
         self.owned_font_names.deinit(self.allocator);
+
+        // Free current font name
+        if (self.current_font_owned) |name| {
+            self.allocator.free(name);
+        }
     }
 
     /// Add a font CMap (takes ownership of the CMap)
