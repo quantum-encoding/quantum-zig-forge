@@ -89,6 +89,7 @@ pub fn build(b: *std.Build) void {
 
     // Link with libwebsockets for real WebSocket connectivity
     real_hft_exe.linkSystemLibrary("websockets");
+    real_hft_exe.linkSystemLibrary("zmq");
     real_hft_exe.linkLibC();
 
     b.installArtifact(real_hft_exe);
