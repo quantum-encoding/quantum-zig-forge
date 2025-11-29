@@ -133,9 +133,9 @@ pub const LogEntry = struct {
 
 /// Cluster configuration
 pub const ClusterConfig = struct {
-    nodes: []NodeId,
+    nodes: []const NodeId,
     // For joint consensus during config changes
-    old_nodes: ?[]NodeId = null,
+    old_nodes: ?[]const NodeId = null,
 
     pub fn quorumSize(self: *const ClusterConfig) usize {
         const n = self.nodes.len;
