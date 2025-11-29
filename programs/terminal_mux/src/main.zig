@@ -187,7 +187,7 @@ fn runServer(allocator: std.mem.Allocator, session_name: []const u8) !void {
     _ = try posix.write(posix.STDOUT_FILENO, renderer.getOutput());
 
     // Main event loop
-    var epoll_fd = try posix.epoll_create1(0);
+    const epoll_fd = try posix.epoll_create1(0);
     defer posix.close(epoll_fd);
 
     // Add stdin to epoll
