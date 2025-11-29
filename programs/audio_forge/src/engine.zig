@@ -370,6 +370,42 @@ pub const AudioEngine = struct {
     pub fn getLatencyMs(self: *Self) f32 {
         return self.backend.getLatencyMs();
     }
+
+    // =========================================================================
+    // DSP Control Methods
+    // =========================================================================
+
+    /// Enable/disable DSP processing
+    pub fn setDspEnabled(self: *Self, enabled: bool) void {
+        self.dsp_enabled = enabled;
+        std.log.info("DSP processing {s}", .{if (enabled) "enabled" else "disabled"});
+    }
+
+    /// Check if DSP is enabled
+    pub fn isDspEnabled(self: *const Self) bool {
+        return self.dsp_enabled;
+    }
+
+    /// Get the equalizer for configuration
+    pub fn getEq(self: *Self) *ParametricEq {
+        return &self.eq;
+    }
+
+    /// Get the DSP graph for adding custom processors
+    pub fn getDspGraph(self: *Self) *DspGraph {
+        return &self.dsp_graph;
+    }
+
+    /// Apply an EQ preset
+    pub fn applyEqPreset(self: *Self, preset: dsp.EqPreset) void {
+        preset.apply(&self.eq);
+        std.log.info("Applied EQ preset", .{});
+    }
+
+    /// Reset all DSP processors
+    pub fn resetDsp(self: *Self) void {
+        self.dsp_graph.reset();
+    }
 };
 
 // =============================================================================
