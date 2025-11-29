@@ -116,8 +116,8 @@ pub const Pty = struct {
             };
 
             // Execute the command using libc execvpe via execvpeZ
-            // execvpeZ returns noreturn on success, or an error
-            _ = posix.execvpeZ(argv[0], @ptrCast(argv.ptr), envp);
+            // execvpeZ doesn't return on success
+            posix.execvpeZ(argv[0], @ptrCast(argv.ptr), envp) catch {};
             // If we reach here, exec failed
             posix.exit(127);
         } else {
