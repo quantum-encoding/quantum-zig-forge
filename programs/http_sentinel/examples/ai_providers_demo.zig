@@ -82,7 +82,10 @@ fn demoClaudeClient(
     };
     defer allocator.free(api_key);
 
-    var client = ClaudeClient.init(allocator, api_key);
+    var client = ClaudeClient.init(allocator, api_key) catch |err| {
+        std.debug.print("❌ Failed to init client: {any}\n", .{err});
+        return;
+    };
     defer client.deinit();
 
     const config = ClaudeClient.fastConfig(); // Use Haiku for speed
