@@ -26,6 +26,7 @@ pub const TextExtractor = struct {
     // Font encoding (ToUnicode CMap per font name)
     font_cmaps: std.StringHashMap(*CMap),
     current_font: ?[]const u8 = null,
+    current_font_owned: ?[]u8 = null, // Owned copy of current font name
     owned_font_names: std.ArrayList([]u8),
 
     pub fn init(allocator: std.mem.Allocator) TextExtractor {
