@@ -131,7 +131,7 @@ pub const Ascii85Decode = struct {
 
             // Special case: 'z' = 4 zero bytes
             if (encoded[i] == 'z') {
-                try result.appendNTimes(allocator, 0, 4);
+                try result.appendNTimes(allocator, 4, 0);
                 i += 1;
                 continue;
             }
