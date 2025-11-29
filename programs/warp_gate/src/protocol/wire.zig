@@ -280,7 +280,7 @@ pub const FileStream = struct {
 test "header serialization round-trip" {
     const header = Header{
         .msg_type = .file_chunk,
-        .length = 0x12345678,
+        .length = 1024, // Must be <= MAX_PAYLOAD_SIZE
     };
 
     const buf = header.serialize();
