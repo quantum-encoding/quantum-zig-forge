@@ -54,12 +54,21 @@ pub fn build(b: *std.Build) void {
 
     // CLI Tools
     const pdf_info = addTool(b, "pdf-info", "src/tools/pdf_info.zig", target, optimize, pdf_engine_module);
+    const pdf_text = addTool(b, "pdf-text", "src/tools/pdf_text.zig", target, optimize, pdf_engine_module);
 
-    // Run commands
+    // Run commands for pdf-info
     const run_info = b.addRunArtifact(pdf_info);
     if (b.args) |args| {
         run_info.addArgs(args);
     }
     const info_step = b.step("info", "Run pdf-info tool");
     info_step.dependOn(&run_info.step);
+
+    // Run commands for pdf-text
+    const run_text = b.addRunArtifact(pdf_text);
+    if (b.args) |args| {
+        run_text.addArgs(args);
+    }
+    const text_step = b.step("text", "Run pdf-text tool");
+    text_step.dependOn(&run_text.step);
 }
