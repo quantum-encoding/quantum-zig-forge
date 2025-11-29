@@ -175,7 +175,7 @@ fn cmdSend(allocator: std.mem.Allocator, args: Args) !void {
     var i: u32 = 0;
     while (i < 30) : (i += 1) {
         print("\r  \x1b[33m⏳\x1b[0m Waiting... {d}s", .{i});
-        std.Thread.sleep(std.time.ns_per_s);
+        std.posix.nanosleep(1, 0);
 
         // Check for peer
         if (session.state == .connected) break;
@@ -237,7 +237,7 @@ fn cmdRecv(allocator: std.mem.Allocator, args: Args) !void {
     var i: u32 = 0;
     while (i < 30) : (i += 1) {
         print("\r  \x1b[33m⏳\x1b[0m Searching... {d}s", .{i});
-        std.Thread.sleep(std.time.ns_per_s);
+        std.posix.nanosleep(1, 0);
 
         if (session.state == .connected) break;
     }
