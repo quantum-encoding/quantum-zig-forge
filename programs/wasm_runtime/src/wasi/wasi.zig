@@ -240,10 +240,12 @@ pub const WasiInstance = struct {
 
     pub fn deinit(self: *WasiInstance) void {
         // Close preopened directories (skip stdin/stdout/stderr)
-        for (self.fds.items[3..]) |fd| {
-            if (fd.file) |f| f.close();
+        if (self.fds.items.len > 3) {
+            for (self.fds.items[3..]) |fd| {
+                _ = fd; // File handles are just ints, no close needed for now
+            }
         }
-        self.fds.deinit();
+        self.fds.deinit(self.allocator);
         self.instance.deinit();
     }
 
