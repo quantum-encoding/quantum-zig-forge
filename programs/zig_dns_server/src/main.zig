@@ -86,7 +86,13 @@ pub fn main() !void {
     // Start server
     std.debug.print("Starting DNS server...\n", .{});
     server.start() catch |err| {
-        std.debug.print("Server error: {}\n", .{err});
+        std.debug.print("Server start error: {}\n", .{err});
+        return err;
+    };
+
+    // Run event loop (blocking)
+    server.run() catch |err| {
+        std.debug.print("Server run error: {}\n", .{err});
         return err;
     };
 }
