@@ -190,24 +190,24 @@ pub const WasiInstance = struct {
             .allocator = allocator,
             .instance = try Instance.init(allocator, module),
             .config = config,
-            .fds = std.ArrayList(Fd).init(allocator),
+            .fds = .empty,
         };
 
-        // Set up standard FDs
-        try wasi.fds.append(.{
-            .file = config.stdin orelse std.io.getStdIn(),
+        // Set up standard FDs (use posix file descriptors directly)
+        try wasi.fds.append(allocator, .{
+            .file = if (config.stdin) |f| f else std.posix.STDIN_FILENO,
             .preopen_path = null,
             .rights = .{ .fd_read = true },
             .fdflags = 0,
         });
-        try wasi.fds.append(.{
-            .file = config.stdout orelse std.io.getStdOut(),
+        try wasi.fds.append(allocator, .{
+            .file = if (config.stdout) |f| f else std.posix.STDOUT_FILENO,
             .preopen_path = null,
             .rights = .{ .fd_write = true },
             .fdflags = 0,
         });
-        try wasi.fds.append(.{
-            .file = config.stderr orelse std.io.getStdErr(),
+        try wasi.fds.append(allocator, .{
+            .file = if (config.stderr) |f| f else std.posix.STDERR_FILENO,
             .preopen_path = null,
             .rights = .{ .fd_write = true },
             .fdflags = 0,
@@ -220,7 +220,7 @@ pub const WasiInstance = struct {
             };
             // Store the underlying file handle
             const file_handle = dir.fd;
-            try wasi.fds.append(.{
+            try wasi.fds.append(allocator, .{
                 .file = file_handle,
                 .preopen_path = preopen.guest_path,
                 .rights = .{
