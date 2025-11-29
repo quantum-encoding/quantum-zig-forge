@@ -107,7 +107,7 @@ pub const Strategy = struct {
 /// High-Frequency Trading System
 pub const HFTSystem = struct {
     const Self = @This();
-    
+
     // Core components
     order_books: std.StringHashMap(*OrderBook),
     strategies: std.ArrayListAligned(Strategy, null),
@@ -118,9 +118,12 @@ pub const HFTSystem = struct {
     // Performance metrics
     metrics: SystemMetrics,
     allocator: std.mem.Allocator,
-    
+
     // Configuration
     config: SystemConfig,
+
+    // Risk management
+    runaway_protection: ?RunawayProtection = null,
     
     pub const SystemConfig = struct {
         max_order_rate: u32,       // Orders per second limit
