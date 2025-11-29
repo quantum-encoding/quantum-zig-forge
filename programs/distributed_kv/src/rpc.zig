@@ -21,6 +21,16 @@ const std = @import("std");
 const raft = @import("raft.zig");
 
 // =============================================================================
+// Helper Functions
+// =============================================================================
+
+/// Get current time in milliseconds
+fn currentTimeMs() i64 {
+    const ts = std.posix.clock_gettime(.REALTIME) catch return 0;
+    return @divTrunc(@as(i64, ts.sec) * 1000 + @divTrunc(ts.nsec, 1_000_000), 1);
+}
+
+// =============================================================================
 // Constants
 // =============================================================================
 
