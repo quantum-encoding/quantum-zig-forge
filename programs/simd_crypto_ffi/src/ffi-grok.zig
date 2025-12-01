@@ -230,9 +230,7 @@ export fn quantum_chacha20_encrypt(
     const nonce_arr: [12]u8 = nonce[0..12].*;
     const plaintext_slice = if (plaintext_len > 0) plaintext[0..plaintext_len] else &[_]u8{};
     const ciphertext_slice = ciphertext[0..plaintext_len];
-    var ctx = crypto.stream.chacha.ChaCha20IETF.init(key_arr, nonce_arr);
-    ctx.seekTo(counter);
-    ctx.encrypt(plaintext_slice, ciphertext_slice);
+    crypto.stream.chacha.ChaCha20IETF.xor(ciphertext_slice, plaintext_slice, counter, key_arr, nonce_arr);
     return @intFromEnum(QuantumCryptoError.success);
 }
 /// Decrypt data with ChaCha20 stream cipher
