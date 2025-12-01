@@ -20,6 +20,9 @@ pub const Scheduler = struct {
     task_map_mutex: std.Thread.Mutex,
     next_task_id: std.atomic.Value(u64),
     running: std.atomic.Value(bool),
+    // Condition variable for worker sleep/wake
+    work_cond: std.Thread.Condition,
+    work_mutex: std.Thread.Mutex,
 
     pub const Options = struct {
         thread_count: usize = 8,
@@ -72,6 +75,8 @@ pub const Scheduler = struct {
             .task_map_mutex = std.Thread.Mutex{},
             .next_task_id = std.atomic.Value(u64).init(0),
             .running = std.atomic.Value(bool).init(false),
+            .work_cond = std.Thread.Condition{},
+            .work_mutex = std.Thread.Mutex{},
         };
     }
 
@@ -104,6 +109,9 @@ pub const Scheduler = struct {
 
     pub fn stop(self: *Self) void {
         self.running.store(false, .release);
+
+        // Wake up all sleeping workers so they can see the shutdown flag
+        self.work_cond.broadcast();
     }
 
     /// Spawn a new task
@@ -142,6 +150,9 @@ pub const Scheduler = struct {
         const thread_id = task_id % self.thread_count;
         try self.work_queues[thread_id].push(entry);
 
+        // Wake up one sleeping worker to handle the new task
+        self.work_cond.signal();
+
         return TaskHandle{ .id = task_id, .scheduler = self };
     }
 
@@ -159,6 +170,7 @@ pub const Scheduler = struct {
 
             // Work stealing: try to steal from random queue
             var attempts: usize = 0;
+            var found_work = false;
             while (attempts < self.thread_count) : (attempts += 1) {
                 const victim = random.intRangeAtMost(usize, 0, self.thread_count - 1);
                 if (victim == worker_id) continue;
@@ -166,12 +178,25 @@ pub const Scheduler = struct {
                 if (self.work_queues[victim].steal()) |entry| {
                     entry.execute();
                     self.unregisterTask(entry);
+                    found_work = true;
                     break;
                 }
             }
 
-            // No work found, yield
-            std.Thread.yield() catch {};
+            // If we found work, continue immediately to check for more
+            if (found_work) continue;
+
+            // No work found - sleep on condition variable
+            // This prevents busy-waiting and allows clean shutdown
+            self.work_mutex.lock();
+            // Double-check running flag before sleeping
+            if (!self.running.load(.acquire)) {
+                self.work_mutex.unlock();
+                break;
+            }
+            // Sleep until woken by new work or shutdown signal
+            self.work_cond.wait(&self.work_mutex);
+            self.work_mutex.unlock();
         }
     }
 
