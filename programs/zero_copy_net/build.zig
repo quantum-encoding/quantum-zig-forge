@@ -10,6 +10,20 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Static library (FFI)
+    const lib = b.addStaticLibrary(.{
+        .name = "zero_copy_net",
+        .root_source_file = b.path("src/ffi.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    lib.linkLibC();
+    lib.installHeader(b.path("include/zero_copy_net.h"), "zero_copy_net.h");
+    b.installArtifact(lib);
+
+    const lib_step = b.step("lib", "Build static library");
+    lib_step.dependOn(&b.addInstallArtifact(lib, .{}).step);
+
     // Tests
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
