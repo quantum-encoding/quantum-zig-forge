@@ -1,6 +1,7 @@
 const std = @import("std");
 const crypto = std.crypto;
 const bitcoin_tx = @import("bitcoin/transaction.zig");
+const spv = @import("bitcoin/spv.zig");
 
 // =============================================================================
 // Error Codes
