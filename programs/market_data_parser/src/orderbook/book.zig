@@ -39,21 +39,105 @@ pub const OrderBook = struct {
     }
 
     /// Update bid side (buy orders)
+    /// Bids are sorted descending by price (best bid = highest price at index 0)
     pub fn updateBid(self: *OrderBook, price: f64, qty: f64) void {
-        // TODO: SIMD binary search for price level
-        // TODO: Insert/update in sorted order
-        _ = self;
-        _ = price;
-        _ = qty;
+        self.sequence += 1;
+
+        // Find insertion/update position via binary search
+        var left: usize = 0;
+        var right: usize = self.bid_count;
+        var found_idx: ?usize = null;
+
+        while (left < right) {
+            const mid = left + (right - left) / 2;
+            const mid_price = self.bids[mid].price;
+
+            if (mid_price == price) {
+                found_idx = mid;
+                break;
+            } else if (mid_price > price) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+
+        if (found_idx) |idx| {
+            // Update existing level
+            if (qty == 0.0) {
+                // Remove level
+                if (idx + 1 < self.bid_count) {
+                    std.mem.copyForwards(PriceLevel, self.bids[idx..self.bid_count-1], self.bids[idx+1..self.bid_count]);
+                }
+                self.bid_count -= 1;
+            } else {
+                self.bids[idx].quantity = qty;
+            }
+        } else if (qty > 0.0) {
+            // Insert new level
+            if (self.bid_count >= 100) return; // Full
+
+            const insert_idx = left;
+
+            // Shift elements to make room
+            if (insert_idx < self.bid_count) {
+                std.mem.copyBackwards(PriceLevel, self.bids[insert_idx+1..self.bid_count+1], self.bids[insert_idx..self.bid_count]);
+            }
+
+            self.bids[insert_idx] = PriceLevel.init(price, qty);
+            self.bid_count += 1;
+        }
     }
 
     /// Update ask side (sell orders)
+    /// Asks are sorted ascending by price (best ask = lowest price at index 0)
     pub fn updateAsk(self: *OrderBook, price: f64, qty: f64) void {
-        // TODO: SIMD binary search for price level
-        // TODO: Insert/update in sorted order
-        _ = self;
-        _ = price;
-        _ = qty;
+        self.sequence += 1;
+
+        // Find insertion/update position via binary search
+        var left: usize = 0;
+        var right: usize = self.ask_count;
+        var found_idx: ?usize = null;
+
+        while (left < right) {
+            const mid = left + (right - left) / 2;
+            const mid_price = self.asks[mid].price;
+
+            if (mid_price == price) {
+                found_idx = mid;
+                break;
+            } else if (mid_price < price) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+
+        if (found_idx) |idx| {
+            // Update existing level
+            if (qty == 0.0) {
+                // Remove level
+                if (idx + 1 < self.ask_count) {
+                    std.mem.copyForwards(PriceLevel, self.asks[idx..self.ask_count-1], self.asks[idx+1..self.ask_count]);
+                }
+                self.ask_count -= 1;
+            } else {
+                self.asks[idx].quantity = qty;
+            }
+        } else if (qty > 0.0) {
+            // Insert new level
+            if (self.ask_count >= 100) return; // Full
+
+            const insert_idx = left;
+
+            // Shift elements to make room
+            if (insert_idx < self.ask_count) {
+                std.mem.copyBackwards(PriceLevel, self.asks[insert_idx+1..self.ask_count+1], self.asks[insert_idx..self.ask_count]);
+            }
+
+            self.asks[insert_idx] = PriceLevel.init(price, qty);
+            self.ask_count += 1;
+        }
     }
 
     /// Get best bid (highest buy price)
