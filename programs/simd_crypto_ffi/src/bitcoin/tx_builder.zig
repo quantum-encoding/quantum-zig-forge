@@ -456,7 +456,8 @@ pub fn signHash(hash: *const [32]u8, private_key: *const [32]u8) TxBuilderError!
     const secret_key = Ecdsa.SecretKey.fromBytes(private_key.*) catch
         return TxBuilderError.InvalidPrivateKey;
 
-    const key_pair = Ecdsa.KeyPair.fromSecretKey(secret_key);
+    const key_pair = Ecdsa.KeyPair.fromSecretKey(secret_key) catch
+        return TxBuilderError.InvalidPrivateKey;
 
     // Sign the message hash
     const sig = key_pair.sign(hash, null) catch
