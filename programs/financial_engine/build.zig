@@ -14,25 +14,27 @@ pub fn build(b: *std.Build) void {
     // FFI Static Library
     // ========================================================================
 
-    const ffi_lib = b.addStaticLibrary(.{
-        .name = "financial_engine",
+    const ffi_module = b.createModule(.{
         .root_source_file = b.path("src/ffi.zig"),
         .target = target,
         .optimize = optimize,
     });
 
+    const ffi_lib = b.addLibrary(.{
+        .linkage = .static,
+        .name = "financial_engine",
+        .root_module = ffi_module,
+    });
+
     ffi_lib.linkLibC();
     ffi_lib.linkSystemLibrary("zmq");
+    ffi_lib.installHeader(b.path("include/financial_engine.h"), "financial_engine.h");
 
     // Install the static library
     b.installArtifact(ffi_lib);
 
-    // Install C header
-    const install_header = b.addInstallHeaderFile(
-        b.path("include/financial_engine.h"),
-        "financial_engine.h"
-    );
-    b.getInstallStep().dependOn(&install_header.step);
+    const ffi_step = b.step("ffi", "Build FFI static library");
+    ffi_step.dependOn(&b.addInstallArtifact(ffi_lib, .{}).step);
 
     // Main executable
     const exe = b.addExecutable(.{
