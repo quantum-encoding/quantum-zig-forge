@@ -2053,3 +2053,536 @@ fn convertFromCKey(c_key: *const CExtendedKey) bip32.ExtendedKey {
         .is_private = c_key.is_private != 0,
     };
 }
+
+// =============================================================================
+// TRANSACTION SIGNING FFI
+// =============================================================================
+// C-compatible interface for Bitcoin transaction construction and signing.
+// Provides the "Action Layer" - enabling the wallet to send transactions.
+// =============================================================================
+
+const tx_builder = @import("bitcoin/tx_builder.zig");
+
+/// Maximum inputs/outputs for transaction builder
+pub const MAX_TX_BUILDER_INPUTS: usize = tx_builder.TxBuilder.MAX_INPUTS;
+pub const MAX_TX_BUILDER_OUTPUTS: usize = tx_builder.TxBuilder.MAX_OUTPUTS;
+
+/// C-compatible UTXO structure for spending
+pub const CSpendableUtxo = extern struct {
+    /// Previous transaction ID (32 bytes, internal byte order)
+    txid: [32]u8,
+    /// Output index in previous transaction
+    vout: u32,
+    /// Value in satoshis
+    value: u64,
+    /// Public key hash (20 bytes, for P2WPKH address verification)
+    pubkey_hash: [20]u8,
+    /// Derivation index for key lookup
+    derivation_index: u32,
+};
+
+/// Transaction result codes
+pub const TxResult = enum(c_int) {
+    success = 0,
+    null_pointer = -1,
+    no_inputs = -2,
+    no_outputs = -3,
+    insufficient_funds = -4,
+    invalid_private_key = -5,
+    signing_failed = -6,
+    buffer_too_small = -7,
+    output_below_dust = -8,
+    too_many_inputs = -9,
+    too_many_outputs = -10,
+    invalid_address = -11,
+};
+
+/// Opaque transaction builder handle
+/// The actual TxBuilder is stored in a thread-local variable
+const TxBuilderHandle = *tx_builder.TxBuilder;
+
+/// Thread-local storage for the transaction builder
+/// This allows stateful transaction building across FFI calls
+threadlocal var tx_builder_storage: tx_builder.TxBuilder = tx_builder.TxBuilder.init();
+threadlocal var tx_builder_initialized: bool = false;
+
+/// Initialize a new transaction builder
+///
+/// Must be called before adding inputs/outputs.
+/// Resets any previous transaction state.
+///
+/// Returns: 0 on success
+export fn quantum_tx_builder_init() c_int {
+    tx_builder_storage = tx_builder.TxBuilder.init();
+    tx_builder_initialized = true;
+    return @intFromEnum(TxResult.success);
+}
+
+/// Add a P2WPKH input (UTXO to spend) to the transaction
+///
+/// Parameters:
+/// - utxo: Pointer to CSpendableUtxo structure
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_tx_builder_add_input(
+    utxo: *const CSpendableUtxo,
+) c_int {
+    if (@intFromPtr(utxo) == 0) {
+        setLastError("TX builder: null UTXO pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (!tx_builder_initialized) {
+        setLastError("TX builder: not initialized");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+
+    const internal_utxo = tx_builder.SpendableUtxo{
+        .txid = utxo.txid,
+        .vout = utxo.vout,
+        .value = utxo.value,
+        .pubkey_hash = utxo.pubkey_hash,
+        .derivation_index = utxo.derivation_index,
+    };
+
+    tx_builder_storage.addInput(internal_utxo) catch |err| {
+        return switch (err) {
+            error.TooManyInputs => @intFromEnum(TxResult.too_many_inputs),
+            else => @intFromEnum(TxResult.null_pointer),
+        };
+    };
+
+    return @intFromEnum(TxResult.success);
+}
+
+/// Add a P2WPKH output (native SegWit payment) to the transaction
+///
+/// Parameters:
+/// - value: Amount in satoshis
+/// - pubkey_hash: 20-byte public key hash (recipient address hash)
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_tx_builder_add_p2wpkh_output(
+    value: u64,
+    pubkey_hash: [*c]const u8,
+) c_int {
+    if (@intFromPtr(pubkey_hash) == 0) {
+        setLastError("TX builder: null pubkey_hash pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (!tx_builder_initialized) {
+        setLastError("TX builder: not initialized");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+
+    var hash_arr: [20]u8 = undefined;
+    @memcpy(&hash_arr, pubkey_hash[0..20]);
+
+    tx_builder_storage.addP2wpkhOutput(value, &hash_arr) catch |err| {
+        return switch (err) {
+            error.TooManyOutputs => @intFromEnum(TxResult.too_many_outputs),
+            error.OutputBelowDust => @intFromEnum(TxResult.output_below_dust),
+            else => @intFromEnum(TxResult.null_pointer),
+        };
+    };
+
+    return @intFromEnum(TxResult.success);
+}
+
+/// Add a P2PKH output (legacy payment) to the transaction
+///
+/// Parameters:
+/// - value: Amount in satoshis
+/// - pubkey_hash: 20-byte public key hash
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_tx_builder_add_p2pkh_output(
+    value: u64,
+    pubkey_hash: [*c]const u8,
+) c_int {
+    if (@intFromPtr(pubkey_hash) == 0) {
+        setLastError("TX builder: null pubkey_hash pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (!tx_builder_initialized) {
+        setLastError("TX builder: not initialized");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+
+    var hash_arr: [20]u8 = undefined;
+    @memcpy(&hash_arr, pubkey_hash[0..20]);
+
+    tx_builder_storage.addP2pkhOutput(value, &hash_arr) catch |err| {
+        return switch (err) {
+            error.TooManyOutputs => @intFromEnum(TxResult.too_many_outputs),
+            error.OutputBelowDust => @intFromEnum(TxResult.output_below_dust),
+            else => @intFromEnum(TxResult.null_pointer),
+        };
+    };
+
+    return @intFromEnum(TxResult.success);
+}
+
+/// Add an OP_RETURN data output to the transaction
+///
+/// Parameters:
+/// - data: Arbitrary data to embed (max 80 bytes)
+/// - data_len: Length of data
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_tx_builder_add_op_return(
+    data: [*c]const u8,
+    data_len: usize,
+) c_int {
+    if (data_len > 0 and @intFromPtr(data) == 0) {
+        setLastError("TX builder: null data pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (!tx_builder_initialized) {
+        setLastError("TX builder: not initialized");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+
+    const data_slice = if (data_len > 0) data[0..data_len] else &[_]u8{};
+
+    tx_builder_storage.addOpReturnOutput(data_slice) catch |err| {
+        return switch (err) {
+            error.TooManyOutputs => @intFromEnum(TxResult.too_many_outputs),
+            error.BufferTooSmall => @intFromEnum(TxResult.buffer_too_small),
+            else => @intFromEnum(TxResult.null_pointer),
+        };
+    };
+
+    return @intFromEnum(TxResult.success);
+}
+
+/// Get total input value in satoshis
+///
+/// Returns: Total value of all inputs
+export fn quantum_tx_builder_total_input() u64 {
+    if (!tx_builder_initialized) return 0;
+    return tx_builder_storage.getTotalInputValue();
+}
+
+/// Get total output value in satoshis
+///
+/// Returns: Total value of all outputs
+export fn quantum_tx_builder_total_output() u64 {
+    if (!tx_builder_initialized) return 0;
+    return tx_builder_storage.getTotalOutputValue();
+}
+
+/// Get transaction fee (inputs - outputs)
+///
+/// Returns: Fee in satoshis
+export fn quantum_tx_builder_fee() u64 {
+    if (!tx_builder_initialized) return 0;
+    return tx_builder_storage.getFee();
+}
+
+/// Estimate transaction virtual size (for fee calculation)
+///
+/// Returns: Estimated vsize in virtual bytes
+export fn quantum_tx_builder_estimate_vsize() usize {
+    if (!tx_builder_initialized) return 0;
+    return tx_builder_storage.estimateVsize();
+}
+
+/// Get current input count
+export fn quantum_tx_builder_input_count() usize {
+    if (!tx_builder_initialized) return 0;
+    return tx_builder_storage.input_count;
+}
+
+/// Get current output count
+export fn quantum_tx_builder_output_count() usize {
+    if (!tx_builder_initialized) return 0;
+    return tx_builder_storage.output_count;
+}
+
+/// Sign the transaction and serialize to bytes
+///
+/// This is the main signing function that:
+/// 1. Computes BIP143 sighash for each input
+/// 2. Signs with the appropriate private key
+/// 3. Constructs witness data
+/// 4. Serializes the complete signed transaction
+///
+/// Parameters:
+/// - private_keys: Array of 32-byte private keys, indexed by derivation_index
+/// - key_count: Number of private keys provided
+/// - out_tx: Output buffer for serialized transaction
+/// - out_tx_size: Size of output buffer (must be >= estimated size)
+/// - actual_size: Receives actual serialized size
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_tx_sign(
+    private_keys: [*c]const [32]u8,
+    key_count: usize,
+    out_tx: [*c]u8,
+    out_tx_size: usize,
+    actual_size: *usize,
+) c_int {
+    if (@intFromPtr(private_keys) == 0) {
+        setLastError("TX sign: null private_keys pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (@intFromPtr(out_tx) == 0 or @intFromPtr(actual_size) == 0) {
+        setLastError("TX sign: null output pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (!tx_builder_initialized) {
+        setLastError("TX sign: builder not initialized");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (tx_builder_storage.input_count == 0) {
+        setLastError("TX sign: no inputs");
+        return @intFromEnum(TxResult.no_inputs);
+    }
+    if (tx_builder_storage.output_count == 0) {
+        setLastError("TX sign: no outputs");
+        return @intFromEnum(TxResult.no_outputs);
+    }
+
+    const keys_slice = private_keys[0..key_count];
+    const out_slice = out_tx[0..out_tx_size];
+
+    const tx_len = tx_builder.signTransaction(&tx_builder_storage, keys_slice, out_slice) catch |err| {
+        return switch (err) {
+            error.NoInputs => @intFromEnum(TxResult.no_inputs),
+            error.NoOutputs => @intFromEnum(TxResult.no_outputs),
+            error.InsufficientFunds => @intFromEnum(TxResult.insufficient_funds),
+            error.InvalidPrivateKey => @intFromEnum(TxResult.invalid_private_key),
+            error.SigningFailed => @intFromEnum(TxResult.signing_failed),
+            error.BufferTooSmall => @intFromEnum(TxResult.buffer_too_small),
+            else => @intFromEnum(TxResult.signing_failed),
+        };
+    };
+
+    actual_size.* = tx_len;
+    return @intFromEnum(TxResult.success);
+}
+
+/// Compute BIP143 sighash for a specific input (for external signing)
+///
+/// Use this when you need to sign with an external device (e.g., hardware wallet).
+/// The returned hash should be signed with ECDSA over secp256k1.
+///
+/// Parameters:
+/// - input_index: Index of the input to compute sighash for
+/// - private_key: Private key (used only to derive pubkey for scriptCode)
+/// - sighash_out: Output buffer for 32-byte sighash
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_tx_compute_sighash(
+    input_index: usize,
+    private_key: [*c]const u8,
+    sighash_out: [*c]u8,
+) c_int {
+    if (@intFromPtr(private_key) == 0 or @intFromPtr(sighash_out) == 0) {
+        setLastError("TX sighash: null pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (!tx_builder_initialized) {
+        setLastError("TX sighash: builder not initialized");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+
+    var key_arr: [32]u8 = undefined;
+    @memcpy(&key_arr, private_key[0..32]);
+
+    const sighash = tx_builder.computeSighashBip143(
+        &tx_builder_storage,
+        input_index,
+        &key_arr,
+        tx_builder.SIGHASH_ALL,
+    ) catch |err| {
+        return switch (err) {
+            error.NoInputs => @intFromEnum(TxResult.no_inputs),
+            error.InvalidPrivateKey => @intFromEnum(TxResult.invalid_private_key),
+            else => @intFromEnum(TxResult.signing_failed),
+        };
+    };
+
+    @memcpy(sighash_out[0..32], &sighash);
+    return @intFromEnum(TxResult.success);
+}
+
+/// Sign a 32-byte hash with a private key (ECDSA secp256k1)
+///
+/// Uses RFC6979 deterministic nonce generation.
+///
+/// Parameters:
+/// - hash: 32-byte message hash to sign
+/// - private_key: 32-byte private key
+/// - signature_out: Output buffer for signature (at least 72 bytes for DER)
+/// - sig_len_out: Receives actual signature length
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_ecdsa_sign(
+    hash: [*c]const u8,
+    private_key: [*c]const u8,
+    signature_out: [*c]u8,
+    sig_len_out: *usize,
+) c_int {
+    if (@intFromPtr(hash) == 0 or @intFromPtr(private_key) == 0) {
+        setLastError("ECDSA sign: null input pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+    if (@intFromPtr(signature_out) == 0 or @intFromPtr(sig_len_out) == 0) {
+        setLastError("ECDSA sign: null output pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+
+    var hash_arr: [32]u8 = undefined;
+    var key_arr: [32]u8 = undefined;
+    @memcpy(&hash_arr, hash[0..32]);
+    @memcpy(&key_arr, private_key[0..32]);
+
+    // Sign to get compact signature
+    const sig_compact = tx_builder.signHash(&hash_arr, &key_arr) catch |err| {
+        return switch (err) {
+            error.InvalidPrivateKey => @intFromEnum(TxResult.invalid_private_key),
+            error.SigningFailed => @intFromEnum(TxResult.signing_failed),
+            else => @intFromEnum(TxResult.signing_failed),
+        };
+    };
+
+    // Convert to DER format
+    var der_buf: [72]u8 = undefined;
+    const der_len = tx_builder.signatureToDer(&sig_compact, &der_buf) catch |err| {
+        return switch (err) {
+            error.BufferTooSmall => @intFromEnum(TxResult.buffer_too_small),
+            else => @intFromEnum(TxResult.signing_failed),
+        };
+    };
+
+    @memcpy(signature_out[0..der_len], der_buf[0..der_len]);
+    sig_len_out.* = der_len;
+
+    return @intFromEnum(TxResult.success);
+}
+
+/// Derive compressed public key from private key
+///
+/// Parameters:
+/// - private_key: 32-byte private key
+/// - pubkey_out: Output buffer for 33-byte compressed public key
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_derive_pubkey(
+    private_key: [*c]const u8,
+    pubkey_out: [*c]u8,
+) c_int {
+    if (@intFromPtr(private_key) == 0 or @intFromPtr(pubkey_out) == 0) {
+        setLastError("Derive pubkey: null pointer");
+        return @intFromEnum(TxResult.null_pointer);
+    }
+
+    var key_arr: [32]u8 = undefined;
+    @memcpy(&key_arr, private_key[0..32]);
+
+    const pubkey = tx_builder.derivePublicKey(&key_arr) catch |err| {
+        return switch (err) {
+            error.InvalidPrivateKey => @intFromEnum(TxResult.invalid_private_key),
+            else => @intFromEnum(TxResult.invalid_private_key),
+        };
+    };
+
+    @memcpy(pubkey_out[0..33], &pubkey);
+    return @intFromEnum(TxResult.success);
+}
+
+/// Get dust limit in satoshis
+export fn quantum_tx_dust_limit() u64 {
+    return tx_builder.DUST_LIMIT;
+}
+
+/// Get SIGHASH_ALL constant
+export fn quantum_tx_sighash_all() u32 {
+    return tx_builder.SIGHASH_ALL;
+}
+
+/// Get size of CSpendableUtxo struct
+export fn quantum_tx_utxo_size() usize {
+    return @sizeOf(CSpendableUtxo);
+}
+
+// =============================================================================
+// Transaction FFI Tests
+// =============================================================================
+
+test "tx builder init" {
+    const result = quantum_tx_builder_init();
+    try std.testing.expectEqual(@as(c_int, 0), result);
+    try std.testing.expect(tx_builder_initialized);
+}
+
+test "tx builder add input" {
+    _ = quantum_tx_builder_init();
+
+    const utxo = CSpendableUtxo{
+        .txid = [_]u8{0x01} ** 32,
+        .vout = 0,
+        .value = 100000,
+        .pubkey_hash = [_]u8{0x02} ** 20,
+        .derivation_index = 0,
+    };
+
+    const result = quantum_tx_builder_add_input(&utxo);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+    try std.testing.expectEqual(@as(usize, 1), quantum_tx_builder_input_count());
+    try std.testing.expectEqual(@as(u64, 100000), quantum_tx_builder_total_input());
+}
+
+test "tx builder add output" {
+    _ = quantum_tx_builder_init();
+
+    const dest_hash = [_]u8{0x03} ** 20;
+    const result = quantum_tx_builder_add_p2wpkh_output(90000, &dest_hash);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+    try std.testing.expectEqual(@as(usize, 1), quantum_tx_builder_output_count());
+    try std.testing.expectEqual(@as(u64, 90000), quantum_tx_builder_total_output());
+}
+
+test "tx builder fee calculation" {
+    _ = quantum_tx_builder_init();
+
+    // Add input: 100000 sats
+    const utxo = CSpendableUtxo{
+        .txid = [_]u8{0x01} ** 32,
+        .vout = 0,
+        .value = 100000,
+        .pubkey_hash = [_]u8{0x02} ** 20,
+        .derivation_index = 0,
+    };
+    _ = quantum_tx_builder_add_input(&utxo);
+
+    // Add output: 90000 sats
+    const dest_hash = [_]u8{0x03} ** 20;
+    _ = quantum_tx_builder_add_p2wpkh_output(90000, &dest_hash);
+
+    // Fee should be 10000 sats
+    try std.testing.expectEqual(@as(u64, 10000), quantum_tx_builder_fee());
+}
+
+test "derive pubkey" {
+    const private_key = [_]u8{
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    };
+
+    var pubkey: [33]u8 = undefined;
+    const result = quantum_derive_pubkey(&private_key, &pubkey);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+    try std.testing.expect(pubkey[0] == 0x02 or pubkey[0] == 0x03);
+}
+
+test "dust limit constant" {
+    try std.testing.expectEqual(@as(u64, 546), quantum_tx_dust_limit());
+}
+
+test "sighash all constant" {
+    try std.testing.expectEqual(@as(u32, 1), quantum_tx_sighash_all());
+}
