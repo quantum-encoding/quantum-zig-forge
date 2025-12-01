@@ -14,14 +14,11 @@ pub fn build(b: *std.Build) void {
     // FFI Static Library
     // ========================================================================
 
-    const ffi_lib = b.addLibrary(.{
+    const ffi_lib = b.addStaticLibrary(.{
         .name = "financial_engine",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ffi.zig"),
-            .target = target,
-            .optimize = optimize,
-            .linkage = .static,
-        }),
+        .root_source_file = b.path("src/ffi.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     ffi_lib.linkLibC();
