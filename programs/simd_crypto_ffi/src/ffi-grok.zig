@@ -378,7 +378,11 @@ export fn quantum_pbkdf2_sha256(
 /// - len: Number of bytes to zero
 export fn quantum_secure_zero(ptr: [*c]u8, len: usize) void {
     if (len == 0 or @intFromPtr(ptr) == 0) return;
-    crypto.utils.secureZero(u8, ptr[0..len]);
+    // Use volatile to prevent compiler optimization
+    const slice = ptr[0..len];
+    for (slice) |*byte| {
+        @as(*volatile u8, byte).* = 0;
+    }
 }
 /// Constant-time memory comparison
 ///
