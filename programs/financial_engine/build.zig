@@ -11,7 +11,32 @@ pub fn build(b: *std.Build) void {
     // });
 
     // ========================================================================
-    // FFI Static Library
+    // Core FFI Static Library (ZERO DEPENDENCIES)
+    // ========================================================================
+
+    const core_module = b.createModule(.{
+        .root_source_file = b.path("src/financial_core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const core_lib = b.addLibrary(.{
+        .linkage = .static,
+        .name = "financial_core",
+        .root_module = core_module,
+    });
+
+    core_lib.linkLibC();
+    // NO ZMQ, NO EXTERNAL DEPS
+
+    // Install the core library
+    b.installArtifact(core_lib);
+
+    const core_step = b.step("core", "Build core FFI static library (zero deps)");
+    core_step.dependOn(&b.addInstallArtifact(core_lib, .{}).step);
+
+    // ========================================================================
+    // Full FFI Static Library (with ZMQ dependencies)
     // ========================================================================
 
     const ffi_module = b.createModule(.{
@@ -33,7 +58,7 @@ pub fn build(b: *std.Build) void {
     // Install the static library
     b.installArtifact(ffi_lib);
 
-    const ffi_step = b.step("ffi", "Build FFI static library");
+    const ffi_step = b.step("ffi", "Build full FFI static library (with ZMQ)");
     ffi_step.dependOn(&b.addInstallArtifact(ffi_lib, .{}).step);
 
     // Main executable
