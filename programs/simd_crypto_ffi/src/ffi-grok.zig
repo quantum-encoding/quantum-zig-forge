@@ -400,7 +400,9 @@ export fn quantum_secure_zero(ptr: [*c]u8, len: usize) void {
 export fn quantum_secure_compare(a: [*c]const u8, b: [*c]const u8, len: usize) c_int {
     if (len == 0) return 0;
     if (@intFromPtr(a) == 0 or @intFromPtr(b) == 0) return 1;
-    const result = crypto.timing_safe.eql([*c]const u8, a, b, len);
+    const a_slice = a[0..len];
+    const b_slice = b[0..len];
+    const result = crypto.timing_safe.eql([]const u8, a_slice, b_slice);
     return if (result) 0 else 1;
 }
 // =============================================================================
