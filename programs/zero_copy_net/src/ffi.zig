@@ -227,7 +227,6 @@ export fn zcn_server_create(config: *const ZCN_Config, out_error: ?*ZCN_Error) ?
                 error.IoUringInit => .IO_URING_INIT,
                 error.OutOfMemory => .OUT_OF_MEMORY,
                 error.BindFailed => .BIND_FAILED,
-                else => .BIND_FAILED,
             };
         }
         return null;
