@@ -4,7 +4,34 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // ========================================================================
+    // Core FFI Static Library (ZERO DEPENDENCIES)
+    // ========================================================================
+
+    const core_module = b.createModule(.{
+        .root_source_file = b.path("src/market_data_core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const core_lib = b.addLibrary(.{
+        .linkage = .static,
+        .name = "market_data_core",
+        .root_module = core_module,
+    });
+
+    core_lib.linkLibC();
+    // NO EXTERNAL DEPS
+
+    b.installArtifact(core_lib);
+
+    const core_step = b.step("core", "Build core FFI static library (zero deps)");
+    core_step.dependOn(&b.addInstallArtifact(core_lib, .{}).step);
+
+    // ========================================================================
     // Parser library module (used by benchmarks, examples, tests)
+    // ========================================================================
+
     const parser_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
