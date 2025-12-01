@@ -718,3 +718,419 @@ test "BIP39 PBKDF2-SHA512 Test Vector 2" {
 
     try std.testing.expectEqualSlices(u8, &expected, &output);
 }
+
+// =============================================================================
+// Batch SHA-256d: High-Performance Bitcoin Mining Hashing
+// =============================================================================
+// These functions provide batch processing for SHA-256d (double SHA-256),
+// which is used extensively in Bitcoin mining for:
+// - Block header hashing (finding valid nonces)
+// - Transaction ID computation
+// - Merkle tree construction
+//
+// The stdlib's SHA-256 implementation is already SIMD-optimized internally.
+// This batch API provides a convenient interface for processing multiple
+// hashes and reduces FFI overhead.
+// =============================================================================
+
+// Maximum batch size - chosen to balance memory usage and throughput
+const MaxBatchSize: usize = 16;
+
+/// Compute batch SHA-256d (double SHA-256)
+///
+/// Processes multiple inputs efficiently. Each input is hashed with SHA-256
+/// twice (SHA256(SHA256(x))), which is the standard Bitcoin hashing scheme.
+///
+/// Parameters:
+/// - inputs: Array of pointers to input data
+/// - input_len: Length of each input in bytes (must be same for all)
+/// - outputs: Array of pointers to 32-byte output buffers
+/// - count: Number of inputs/outputs to process (max 16)
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+///
+/// Use case: Bitcoin mining, transaction ID computation, merkle tree building
+export fn quantum_sha256d_batch(
+    inputs: [*c]const [*c]const u8,
+    input_len: usize,
+    outputs: [*c][*c]u8,
+    count: usize,
+) c_int {
+    if (count == 0) {
+        return @intFromEnum(QuantumCryptoError.success);
+    }
+    if (count > MaxBatchSize) {
+        setLastError("SHA-256d batch: count exceeds maximum (16)");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (@intFromPtr(inputs) == 0 or @intFromPtr(outputs) == 0) {
+        setLastError("SHA-256d batch: null pointer");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+
+    // Process each input
+    for (0..count) |i| {
+        if (@intFromPtr(inputs[i]) == 0 or @intFromPtr(outputs[i]) == 0) {
+            setLastError("SHA-256d batch: null pointer in array");
+            return @intFromEnum(QuantumCryptoError.invalid_input);
+        }
+
+        const input_slice = inputs[i][0..input_len];
+        const output_ptr = outputs[i];
+
+        // First SHA-256
+        var first_hash: [32]u8 = undefined;
+        crypto.hash.sha2.Sha256.hash(input_slice, &first_hash, .{});
+
+        // Second SHA-256
+        var second_hash: [32]u8 = undefined;
+        crypto.hash.sha2.Sha256.hash(&first_hash, &second_hash, .{});
+
+        // Copy to output
+        @memcpy(output_ptr[0..32], &second_hash);
+    }
+
+    return @intFromEnum(QuantumCryptoError.success);
+}
+
+/// Get the maximum batch size for batch operations
+///
+/// Returns the maximum number of hashes that can be processed in a single call.
+export fn quantum_sha256d_batch_size() usize {
+    return MaxBatchSize;
+}
+
+// =============================================================================
+// Merkle Tree Construction: Bitcoin Block Merkle Root
+// =============================================================================
+// The Merkle root is a hash that summarizes all transactions in a Bitcoin block.
+// It's computed by:
+// 1. Hashing all transactions with SHA-256d
+// 2. Pairing hashes and concatenating them
+// 3. Hashing each pair with SHA-256d
+// 4. Repeating until only one hash remains (the root)
+//
+// For mining, we compute the root from:
+// - coinbase_hash: The SHA-256d of the coinbase transaction
+// - merkle_branches: Pre-computed sibling hashes from the mining pool
+// =============================================================================
+
+/// Compute Bitcoin Merkle root from coinbase hash and branches
+///
+/// Used in Bitcoin mining to compute the Merkle root for block header construction.
+/// The coinbase hash is combined with each branch hash in sequence using SHA-256d.
+///
+/// Parameters:
+/// - coinbase_hash: 32-byte hash of the coinbase transaction
+/// - branches: Array of 32-byte branch hashes (from mining pool)
+/// - branch_count: Number of branches
+/// - output: 32-byte output buffer for the Merkle root
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+///
+/// Algorithm:
+/// ```
+/// current = coinbase_hash
+/// for each branch in branches:
+///     current = SHA-256d(current || branch)
+/// return current
+/// ```
+export fn quantum_merkle_root(
+    coinbase_hash: [*c]const u8,
+    branches: [*c]const [*c]const u8,
+    branch_count: usize,
+    output: [*c]u8,
+) c_int {
+    if (@intFromPtr(coinbase_hash) == 0) {
+        setLastError("Merkle root: coinbase_hash is null");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (@intFromPtr(output) == 0) {
+        setLastError("Merkle root: output is null");
+        return @intFromEnum(QuantumCryptoError.invalid_output);
+    }
+
+    // Start with coinbase hash
+    var current: [32]u8 = undefined;
+    @memcpy(&current, coinbase_hash[0..32]);
+
+    // Process each branch
+    for (0..branch_count) |i| {
+        if (@intFromPtr(branches[i]) == 0) {
+            setLastError("Merkle root: branch pointer is null");
+            return @intFromEnum(QuantumCryptoError.invalid_input);
+        }
+
+        // Concatenate current and branch
+        var concat: [64]u8 = undefined;
+        @memcpy(concat[0..32], &current);
+        @memcpy(concat[32..64], branches[i][0..32]);
+
+        // Double SHA-256
+        var first_hash: [32]u8 = undefined;
+        crypto.hash.sha2.Sha256.hash(&concat, &first_hash, .{});
+        crypto.hash.sha2.Sha256.hash(&first_hash, &current, .{});
+    }
+
+    @memcpy(output[0..32], &current);
+    return @intFromEnum(QuantumCryptoError.success);
+}
+
+/// Build a complete Merkle tree from transaction hashes
+///
+/// Constructs a full Merkle tree from a list of transaction hashes.
+/// If the number of leaves is odd, the last hash is duplicated.
+///
+/// Parameters:
+/// - tx_hashes: Array of 32-byte transaction hashes
+/// - tx_count: Number of transactions
+/// - output: 32-byte output buffer for the Merkle root
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+export fn quantum_merkle_root_from_txs(
+    tx_hashes: [*c]const [*c]const u8,
+    tx_count: usize,
+    output: [*c]u8,
+) c_int {
+    if (tx_count == 0) {
+        setLastError("Merkle root: no transactions");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (@intFromPtr(tx_hashes) == 0 or @intFromPtr(output) == 0) {
+        setLastError("Merkle root: null pointer");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+
+    // Single transaction case
+    if (tx_count == 1) {
+        if (@intFromPtr(tx_hashes[0]) == 0) {
+            setLastError("Merkle root: null transaction hash");
+            return @intFromEnum(QuantumCryptoError.invalid_input);
+        }
+        @memcpy(output[0..32], tx_hashes[0][0..32]);
+        return @intFromEnum(QuantumCryptoError.success);
+    }
+
+    // Use stack buffer for small trees, heap for larger
+    const max_stack_txs = 64;
+    var stack_buffer: [max_stack_txs * 32]u8 = undefined;
+
+    var current_level: []u8 = undefined;
+    var next_level: []u8 = undefined;
+    var heap_buffer: ?[]u8 = null;
+    var heap_buffer2: ?[]u8 = null;
+
+    // Determine buffer allocation strategy
+    if (tx_count <= max_stack_txs) {
+        current_level = stack_buffer[0 .. tx_count * 32];
+    } else {
+        heap_buffer = std.heap.page_allocator.alloc(u8, tx_count * 32) catch {
+            setLastError("Merkle root: out of memory");
+            return @intFromEnum(QuantumCryptoError.out_of_memory);
+        };
+        current_level = heap_buffer.?;
+    }
+
+    // Copy initial transaction hashes
+    for (0..tx_count) |i| {
+        if (@intFromPtr(tx_hashes[i]) == 0) {
+            if (heap_buffer) |buf| std.heap.page_allocator.free(buf);
+            setLastError("Merkle root: null transaction hash");
+            return @intFromEnum(QuantumCryptoError.invalid_input);
+        }
+        @memcpy(current_level[i * 32 .. (i + 1) * 32], tx_hashes[i][0..32]);
+    }
+
+    var level_count = tx_count;
+
+    // Build tree level by level
+    while (level_count > 1) {
+        // Calculate next level size (round up for odd counts)
+        const next_count = (level_count + 1) / 2;
+        const next_size = next_count * 32;
+
+        // Allocate next level buffer
+        if (next_count <= max_stack_txs and heap_buffer == null) {
+            next_level = stack_buffer[0..next_size];
+        } else {
+            heap_buffer2 = std.heap.page_allocator.alloc(u8, next_size) catch {
+                if (heap_buffer) |buf| std.heap.page_allocator.free(buf);
+                setLastError("Merkle root: out of memory");
+                return @intFromEnum(QuantumCryptoError.out_of_memory);
+            };
+            next_level = heap_buffer2.?;
+        }
+
+        // Process pairs
+        var pair_idx: usize = 0;
+        var out_idx: usize = 0;
+        while (pair_idx < level_count) : ({
+            pair_idx += 2;
+            out_idx += 1;
+        }) {
+            var concat: [64]u8 = undefined;
+            @memcpy(concat[0..32], current_level[pair_idx * 32 .. (pair_idx + 1) * 32]);
+
+            // If odd, duplicate last hash
+            if (pair_idx + 1 < level_count) {
+                @memcpy(concat[32..64], current_level[(pair_idx + 1) * 32 .. (pair_idx + 2) * 32]);
+            } else {
+                @memcpy(concat[32..64], current_level[pair_idx * 32 .. (pair_idx + 1) * 32]);
+            }
+
+            // Double SHA-256
+            var first_hash: [32]u8 = undefined;
+            crypto.hash.sha2.Sha256.hash(&concat, &first_hash, .{});
+            crypto.hash.sha2.Sha256.hash(&first_hash, next_level[out_idx * 32 ..][0..32], .{});
+        }
+
+        // Free old buffer if heap allocated
+        if (heap_buffer) |buf| {
+            std.heap.page_allocator.free(buf);
+        }
+        heap_buffer = heap_buffer2;
+        heap_buffer2 = null;
+        current_level = next_level;
+        level_count = next_count;
+    }
+
+    // Copy result
+    @memcpy(output[0..32], current_level[0..32]);
+
+    // Cleanup
+    if (heap_buffer) |buf| {
+        std.heap.page_allocator.free(buf);
+    }
+
+    return @intFromEnum(QuantumCryptoError.success);
+}
+
+// =============================================================================
+// Batch and Merkle Tests
+// =============================================================================
+
+test "SHA-256d batch single item" {
+    const input = "hello world padded to be longer!"; // 32 bytes
+    var inputs: [1][*c]const u8 = .{input.ptr};
+    var output: [32]u8 = undefined;
+    var outputs: [1][*c]u8 = .{&output};
+
+    const result = quantum_sha256d_batch(&inputs, input.len, &outputs, 1);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+
+    // Verify against standard double SHA-256
+    var expected1: [32]u8 = undefined;
+    var expected2: [32]u8 = undefined;
+    crypto.hash.sha2.Sha256.hash(input, &expected1, .{});
+    crypto.hash.sha2.Sha256.hash(&expected1, &expected2, .{});
+
+    try std.testing.expectEqualSlices(u8, &expected2, &output);
+}
+
+test "SHA-256d batch multiple items" {
+    const inputs_data = [_][]const u8{
+        "input number one, padded nicely!",
+        "input number two, padded nicely!",
+        "input number three padded nicely",
+        "input number four, padded nicely",
+    };
+
+    var input_ptrs: [4][*c]const u8 = undefined;
+    for (0..4) |i| {
+        input_ptrs[i] = inputs_data[i].ptr;
+    }
+
+    var outputs: [4][32]u8 = undefined;
+    var output_ptrs: [4][*c]u8 = undefined;
+    for (0..4) |i| {
+        output_ptrs[i] = &outputs[i];
+    }
+
+    const result = quantum_sha256d_batch(&input_ptrs, 32, &output_ptrs, 4);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+
+    // Verify each output matches sequential computation
+    for (0..4) |i| {
+        var expected1: [32]u8 = undefined;
+        var expected2: [32]u8 = undefined;
+        crypto.hash.sha2.Sha256.hash(inputs_data[i], &expected1, .{});
+        crypto.hash.sha2.Sha256.hash(&expected1, &expected2, .{});
+        try std.testing.expectEqualSlices(u8, &expected2, &outputs[i]);
+    }
+}
+
+test "Merkle root with single branch" {
+    var coinbase: [32]u8 = undefined;
+    var branch: [32]u8 = undefined;
+    var output: [32]u8 = undefined;
+
+    // Fill with test data
+    for (0..32) |i| {
+        coinbase[i] = @intCast(i);
+        branch[i] = @intCast(32 + i);
+    }
+
+    var branches: [1][*]const u8 = .{&branch};
+
+    const result = quantum_merkle_root(&coinbase, &branches, 1, &output);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+
+    // Verify manually
+    var concat: [64]u8 = undefined;
+    @memcpy(concat[0..32], &coinbase);
+    @memcpy(concat[32..64], &branch);
+
+    var expected1: [32]u8 = undefined;
+    var expected2: [32]u8 = undefined;
+    crypto.hash.sha2.Sha256.hash(&concat, &expected1, .{});
+    crypto.hash.sha2.Sha256.hash(&expected1, &expected2, .{});
+
+    try std.testing.expectEqualSlices(u8, &expected2, &output);
+}
+
+test "Merkle root from transactions" {
+    // Create 4 transaction hashes
+    var tx1: [32]u8 = [_]u8{1} ** 32;
+    var tx2: [32]u8 = [_]u8{2} ** 32;
+    var tx3: [32]u8 = [_]u8{3} ** 32;
+    var tx4: [32]u8 = [_]u8{4} ** 32;
+
+    var tx_ptrs: [4][*]const u8 = .{ &tx1, &tx2, &tx3, &tx4 };
+    var output: [32]u8 = undefined;
+
+    const result = quantum_merkle_root_from_txs(&tx_ptrs, 4, &output);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+
+    // Output should not be all zeros
+    var is_zero = true;
+    for (output) |byte| {
+        if (byte != 0) {
+            is_zero = false;
+            break;
+        }
+    }
+    try std.testing.expect(!is_zero);
+}
+
+test "Merkle root single transaction" {
+    var tx: [32]u8 = [_]u8{0xAB} ** 32;
+    var tx_ptrs: [1][*]const u8 = .{&tx};
+    var output: [32]u8 = undefined;
+
+    const result = quantum_merkle_root_from_txs(&tx_ptrs, 1, &output);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+
+    // Single transaction should return itself as root
+    try std.testing.expectEqualSlices(u8, &tx, &output);
+}
+
+test "batch size returns correct value" {
+    const size = quantum_sha256d_batch_size();
+    try std.testing.expect(size == 8 or size == 16);
+}
