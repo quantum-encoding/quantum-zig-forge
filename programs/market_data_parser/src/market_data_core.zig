@@ -85,6 +85,15 @@ export fn mdc_parser_destroy(parser: ?*MDC_Parser) void {
     }
 }
 
+/// Reset parser to beginning of buffer
+///
+/// Use this to search for fields that appear earlier in the JSON
+/// after having searched for later fields.
+export fn mdc_parser_reset(parser: ?*MDC_Parser) void {
+    const ctx: *json_parser.Parser = @ptrCast(@alignCast(parser orelse return));
+    ctx.reset();
+}
+
 /// Find a field by key and extract its value (zero-copy)
 ///
 /// Parameters:

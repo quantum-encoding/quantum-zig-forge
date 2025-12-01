@@ -135,6 +135,27 @@ MDC_Parser* mdc_parser_create(const uint8_t* buffer, size_t len);
 void mdc_parser_destroy(MDC_Parser* parser);
 
 /**
+ * Reset parser to beginning of buffer.
+ *
+ * Parameters:
+ *   parser - Parser handle (NULL is safe, will be no-op)
+ *
+ * Note:
+ *   The parser maintains an internal position that advances as fields are found.
+ *   Use this function to search for fields that appear earlier in the JSON
+ *   after having searched for later fields.
+ *
+ * Example:
+ *   const char* json = "{\"b\":2,\"a\":1}";
+ *   MDC_Parser* p = mdc_parser_create(json, strlen(json));
+ *
+ *   mdc_parser_find_field(p, "b", ...);  // Found at position 1
+ *   mdc_parser_reset(p);                  // Reset to start
+ *   mdc_parser_find_field(p, "a", ...);  // Can now find "a" at position 11
+ */
+void mdc_parser_reset(MDC_Parser* parser);
+
+/**
  * Find a field by key and extract its value (zero-copy).
  *
  * Parameters:
