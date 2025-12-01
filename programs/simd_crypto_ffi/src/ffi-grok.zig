@@ -400,10 +400,22 @@ export fn quantum_secure_zero(ptr: [*c]u8, len: usize) void {
 export fn quantum_secure_compare(a: [*c]const u8, b: [*c]const u8, len: usize) c_int {
     if (len == 0) return 0;
     if (@intFromPtr(a) == 0 or @intFromPtr(b) == 0) return 1;
-    const a_slice = a[0..len];
-    const b_slice = b[0..len];
-    const result = crypto.timing_safe.eql([]const u8, a_slice, b_slice);
-    return if (result) 0 else 1;
+
+    // Manual constant-time comparison (timing_safe.eql requires fixed-size arrays)
+    // This mirrors the stdlib implementation: XOR all bytes and check if result is zero
+    var acc: u8 = 0;
+    var i: usize = 0;
+    while (i < len) : (i += 1) {
+        acc |= a[i] ^ b[i];
+    }
+
+    // Convert to constant-time boolean check
+    // If acc == 0, all bytes were equal
+    const bits = @typeInfo(u8).int.bits;
+    const Cext = std.meta.Int(.unsigned, bits + 1);
+    const equal = @as(bool, @bitCast(@as(u1, @truncate((@as(Cext, acc) -% 1) >> bits))));
+
+    return if (equal) 0 else 1;
 }
 // =============================================================================
 // Version Information
