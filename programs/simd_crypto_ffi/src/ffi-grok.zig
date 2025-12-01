@@ -1,5 +1,7 @@
 const std = @import("std");
 const crypto = std.crypto;
+const bitcoin_tx = @import("bitcoin/transaction.zig");
+
 // =============================================================================
 // Error Codes
 // =============================================================================
@@ -11,6 +13,7 @@ pub const QuantumCryptoError = enum(c_int) {
     invalid_nonce_size = -4,
     buffer_too_small = -5,
     out_of_memory = -6,
+    parse_error = -7,
 };
 // =============================================================================
 // Thread-Local Error Storage
@@ -1009,6 +1012,294 @@ export fn quantum_merkle_root_from_txs(
     }
 
     return @intFromEnum(QuantumCryptoError.success);
+}
+
+// =============================================================================
+// Bitcoin Transaction Parsing FFI
+// =============================================================================
+// C-compatible structures and functions for parsing Bitcoin transactions.
+// These allow Rust/C code to parse raw transaction bytes and extract
+// structured information about inputs, outputs, script types, and values.
+// =============================================================================
+
+/// Maximum number of inputs/outputs in parsed transaction
+pub const MAX_TX_INPUTS: usize = 256;
+pub const MAX_TX_OUTPUTS: usize = 256;
+
+/// C-compatible script type enum
+pub const CScriptType = enum(u8) {
+    p2pkh = 0,
+    p2sh = 1,
+    p2wpkh = 2,
+    p2wsh = 3,
+    p2tr = 4,
+    p2pk = 5,
+    op_return = 6,
+    multisig = 7,
+    unknown = 255,
+};
+
+/// C-compatible transaction output structure
+pub const CTxOutput = extern struct {
+    /// Value in satoshis
+    value: u64,
+    /// Script type
+    script_type: CScriptType,
+    /// Address hash (20 or 32 bytes, zero-padded)
+    address_hash: [32]u8,
+    /// Length of address hash (0, 20, or 32)
+    address_hash_len: u8,
+    /// Script offset in raw transaction
+    script_offset: u32,
+    /// Script length
+    script_len: u32,
+};
+
+/// C-compatible transaction input structure
+pub const CTxInput = extern struct {
+    /// Previous transaction ID (32 bytes, as in raw tx - little-endian)
+    prev_txid: [32]u8,
+    /// Previous output index
+    prev_vout: u32,
+    /// Sequence number
+    sequence: u32,
+    /// ScriptSig offset in raw transaction
+    script_sig_offset: u32,
+    /// ScriptSig length
+    script_sig_len: u32,
+    /// Has witness data
+    has_witness: bool,
+};
+
+/// C-compatible parsed transaction structure
+pub const CParsedTx = extern struct {
+    /// Transaction version
+    version: i32,
+    /// Number of inputs
+    input_count: u32,
+    /// Number of outputs
+    output_count: u32,
+    /// Lock time
+    locktime: u32,
+    /// Is SegWit transaction
+    is_segwit: bool,
+    /// Raw transaction size
+    raw_size: u32,
+    /// Virtual size (for fee calculation)
+    vsize: u32,
+    /// Weight units
+    weight: u32,
+    /// Total output value in satoshis
+    total_output_value: u64,
+    /// Inputs array (caller provides buffer)
+    inputs: [MAX_TX_INPUTS]CTxInput,
+    /// Outputs array (caller provides buffer)
+    outputs: [MAX_TX_OUTPUTS]CTxOutput,
+};
+
+/// Thread-local allocator for parsing (uses page allocator)
+threadlocal var tx_parse_allocator = std.heap.page_allocator;
+
+/// Parse a raw Bitcoin transaction
+///
+/// Parameters:
+/// - raw_tx: Pointer to raw transaction bytes
+/// - raw_tx_len: Length of raw transaction
+/// - parsed: Pointer to CParsedTx struct to fill (caller-allocated)
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+///
+/// Note: The parsed struct contains offsets into the original raw_tx buffer
+/// for scripts. The caller must keep raw_tx valid while using these offsets.
+export fn quantum_bitcoin_parse_tx(
+    raw_tx: [*c]const u8,
+    raw_tx_len: usize,
+    parsed: *CParsedTx,
+) c_int {
+    if (@intFromPtr(raw_tx) == 0 or raw_tx_len == 0) {
+        setLastError("Bitcoin parse: null or empty input");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (@intFromPtr(parsed) == 0) {
+        setLastError("Bitcoin parse: null output struct");
+        return @intFromEnum(QuantumCryptoError.invalid_output);
+    }
+
+    const data = raw_tx[0..raw_tx_len];
+
+    // Parse the transaction
+    const tx = bitcoin_tx.parseTransaction(tx_parse_allocator, data) catch |err| {
+        switch (err) {
+            bitcoin_tx.ParseError.UnexpectedEof => setLastError("Bitcoin parse: unexpected end of data"),
+            bitcoin_tx.ParseError.TooManyInputs => setLastError("Bitcoin parse: too many inputs"),
+            bitcoin_tx.ParseError.TooManyOutputs => setLastError("Bitcoin parse: too many outputs"),
+            bitcoin_tx.ParseError.ScriptTooLarge => setLastError("Bitcoin parse: script too large"),
+            bitcoin_tx.ParseError.InvalidVarint => setLastError("Bitcoin parse: invalid varint"),
+            bitcoin_tx.ParseError.OutOfMemory => setLastError("Bitcoin parse: out of memory"),
+            else => setLastError("Bitcoin parse: unknown error"),
+        }
+        return @intFromEnum(QuantumCryptoError.parse_error);
+    };
+    defer bitcoin_tx.freeTransaction(tx_parse_allocator, &tx);
+
+    // Check limits
+    if (tx.inputs.len > MAX_TX_INPUTS or tx.outputs.len > MAX_TX_OUTPUTS) {
+        setLastError("Bitcoin parse: too many inputs/outputs for FFI struct");
+        return @intFromEnum(QuantumCryptoError.buffer_too_small);
+    }
+
+    // Fill the C struct
+    parsed.version = tx.version;
+    parsed.input_count = @intCast(tx.inputs.len);
+    parsed.output_count = @intCast(tx.outputs.len);
+    parsed.locktime = tx.locktime;
+    parsed.is_segwit = tx.is_segwit;
+    parsed.raw_size = @intCast(tx.raw_size);
+    parsed.vsize = @intCast(tx.vsize);
+    parsed.weight = @intCast(tx.weight);
+
+    // Calculate total output value
+    var total_value: u64 = 0;
+
+    // Copy inputs
+    for (tx.inputs, 0..) |input, i| {
+        parsed.inputs[i] = CTxInput{
+            .prev_txid = input.prevout.txid,
+            .prev_vout = input.prevout.vout,
+            .sequence = input.sequence,
+            .script_sig_offset = @intCast(@intFromPtr(input.script_sig.ptr) - @intFromPtr(raw_tx)),
+            .script_sig_len = @intCast(input.script_sig.len),
+            .has_witness = input.witness.len > 0,
+        };
+    }
+
+    // Copy outputs
+    for (tx.outputs, 0..) |output, i| {
+        var c_output = CTxOutput{
+            .value = output.value,
+            .script_type = @enumFromInt(@intFromEnum(output.script_type)),
+            .address_hash = [_]u8{0} ** 32,
+            .address_hash_len = 0,
+            .script_offset = @intCast(@intFromPtr(output.script_pubkey.ptr) - @intFromPtr(raw_tx)),
+            .script_len = @intCast(output.script_pubkey.len),
+        };
+
+        // Copy address hash if present
+        if (output.address_hash) |hash| {
+            const hash_len = @min(hash.len, 32);
+            @memcpy(c_output.address_hash[0..hash_len], hash[0..hash_len]);
+            c_output.address_hash_len = @intCast(hash_len);
+        }
+
+        parsed.outputs[i] = c_output;
+        total_value += output.value;
+    }
+
+    parsed.total_output_value = total_value;
+
+    return @intFromEnum(QuantumCryptoError.success);
+}
+
+/// Detect script type from a scriptPubKey
+///
+/// Parameters:
+/// - script: Pointer to script bytes
+/// - script_len: Length of script
+/// - address_hash: Buffer to receive address hash (32 bytes, caller-allocated)
+/// - address_hash_len: Pointer to receive actual hash length (0, 20, or 32)
+///
+/// Returns:
+/// - Script type as u8 (see CScriptType enum)
+export fn quantum_bitcoin_detect_script_type(
+    script: [*c]const u8,
+    script_len: usize,
+    address_hash: [*c]u8,
+    address_hash_len: *u8,
+) u8 {
+    if (@intFromPtr(script) == 0 or script_len == 0) {
+        address_hash_len.* = 0;
+        return @intFromEnum(CScriptType.unknown);
+    }
+
+    const script_slice = script[0..script_len];
+    const result = bitcoin_tx.analyzeScript(script_slice);
+
+    // Copy address hash if present
+    if (result.address_hash) |hash| {
+        if (@intFromPtr(address_hash) != 0) {
+            const hash_len = @min(hash.len, 32);
+            @memcpy(address_hash[0..hash_len], hash[0..hash_len]);
+            address_hash_len.* = @intCast(hash_len);
+        }
+    } else {
+        address_hash_len.* = 0;
+    }
+
+    return @intFromEnum(result.script_type);
+}
+
+/// Calculate transaction ID (txid) from raw transaction
+///
+/// For legacy transactions: SHA256d(raw_tx)
+/// For SegWit transactions: SHA256d(raw_tx without witness data)
+///
+/// Parameters:
+/// - raw_tx: Pointer to raw transaction bytes
+/// - raw_tx_len: Length of raw transaction
+/// - txid: Output buffer for 32-byte txid (caller-allocated)
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+///
+/// Note: The returned txid is in internal byte order (little-endian).
+/// To display as hex, reverse the bytes.
+export fn quantum_bitcoin_txid(
+    raw_tx: [*c]const u8,
+    raw_tx_len: usize,
+    txid: [*c]u8,
+) c_int {
+    if (@intFromPtr(raw_tx) == 0 or raw_tx_len == 0) {
+        setLastError("Bitcoin txid: null or empty input");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (@intFromPtr(txid) == 0) {
+        setLastError("Bitcoin txid: null output");
+        return @intFromEnum(QuantumCryptoError.invalid_output);
+    }
+
+    const data = raw_tx[0..raw_tx_len];
+
+    // Check for SegWit marker
+    var is_segwit = false;
+    if (raw_tx_len > 5 and data[4] == 0x00 and data[5] == 0x01) {
+        is_segwit = true;
+    }
+
+    if (is_segwit) {
+        // For SegWit, we need to strip the marker, flag, and witness data
+        // This is a simplified version - proper implementation would reconstruct
+        // the legacy serialization. For now, we parse and reserialize.
+        // TODO: Implement proper witness stripping for accurate txid
+        setLastError("Bitcoin txid: SegWit txid calculation not yet implemented");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+
+    // Non-SegWit: just double-hash the whole thing
+    var first_hash: [32]u8 = undefined;
+    var second_hash: [32]u8 = undefined;
+    crypto.hash.sha2.Sha256.hash(data, &first_hash, .{});
+    crypto.hash.sha2.Sha256.hash(&first_hash, &second_hash, .{});
+
+    @memcpy(txid[0..32], &second_hash);
+    return @intFromEnum(QuantumCryptoError.success);
+}
+
+/// Get size of CParsedTx struct (for FFI buffer allocation)
+export fn quantum_bitcoin_parsed_tx_size() usize {
+    return @sizeOf(CParsedTx);
 }
 
 // =============================================================================
