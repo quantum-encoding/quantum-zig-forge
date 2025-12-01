@@ -109,6 +109,80 @@ export fn quantum_sha256d(
     return @intFromEnum(QuantumCryptoError.success);
 }
 // =============================================================================
+// SHA-512: BIP39 Seed Derivation (PBKDF2-HMAC-SHA512)
+// =============================================================================
+/// Compute SHA-512 hash
+///
+/// Used for BIP39 mnemonic-to-seed derivation with PBKDF2-HMAC-SHA512.
+///
+/// Parameters:
+/// - input: Input data to hash
+/// - input_len: Length of input data in bytes
+/// - output: Output buffer for 64-byte hash (must be pre-allocated by caller)
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+export fn quantum_sha512(
+    input: [*c]const u8,
+    input_len: usize,
+    output: [*c]u8,
+) c_int {
+    if (input_len > 0 and @intFromPtr(input) == 0) {
+        setLastError("SHA-512: input pointer is null");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (@intFromPtr(output) == 0) {
+        setLastError("SHA-512: output pointer is null");
+        return @intFromEnum(QuantumCryptoError.invalid_output);
+    }
+    const input_slice = if (input_len > 0) input[0..input_len] else &[_]u8{};
+    var out: [64]u8 = undefined;
+    crypto.hash.sha2.Sha512.hash(input_slice, &out, .{});
+    @memcpy(output[0..64], &out);
+    return @intFromEnum(QuantumCryptoError.success);
+}
+/// Compute HMAC-SHA512
+///
+/// Used for BIP39 PBKDF2 key derivation.
+///
+/// Parameters:
+/// - key: Secret key
+/// - key_len: Length of key in bytes
+/// - message: Message to authenticate
+/// - message_len: Length of message in bytes
+/// - output: Output buffer for 64-byte MAC (must be pre-allocated by caller)
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+export fn quantum_hmac_sha512(
+    key: [*c]const u8,
+    key_len: usize,
+    message: [*c]const u8,
+    message_len: usize,
+    output: [*c]u8,
+) c_int {
+    if (key_len > 0 and @intFromPtr(key) == 0) {
+        setLastError("HMAC-SHA512: key pointer is null");
+        return @intFromEnum(QuantumCryptoError.invalid_key_size);
+    }
+    if (message_len > 0 and @intFromPtr(message) == 0) {
+        setLastError("HMAC-SHA512: message pointer is null");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (@intFromPtr(output) == 0) {
+        setLastError("HMAC-SHA512: output pointer is null");
+        return @intFromEnum(QuantumCryptoError.invalid_output);
+    }
+    const key_slice = if (key_len > 0) key[0..key_len] else &[_]u8{};
+    const message_slice = if (message_len > 0) message[0..message_len] else &[_]u8{};
+    var out: [64]u8 = undefined;
+    crypto.auth.hmac.sha2.HmacSha512.create(&out, message_slice, key_slice);
+    @memcpy(output[0..64], &out);
+    return @intFromEnum(QuantumCryptoError.success);
+}
+// =============================================================================
 // BLAKE3: Modern, Fastest Hash Function
 // =============================================================================
 /// Compute BLAKE3 hash (32-byte output)
@@ -361,6 +435,66 @@ export fn quantum_pbkdf2_sha256(
     const output_slice = output[0..output_len];
     crypto.pwhash.pbkdf2(output_slice, password_slice, salt_slice, iterations, crypto.auth.hmac.sha2.HmacSha256) catch {
         setLastError("PBKDF2: derivation failed");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    };
+    return @intFromEnum(QuantumCryptoError.success);
+}
+/// Derive key from password using PBKDF2-HMAC-SHA512 (BIP39 standard)
+///
+/// BIP39 specification requires PBKDF2-HMAC-SHA512 with exactly 2048 iterations.
+/// The salt is "mnemonic" + passphrase.
+///
+/// Used for:
+/// - Converting BIP39 seed phrases to master keys
+/// - Bitcoin/Ethereum wallet seed derivation
+/// - Any application requiring BIP39 compliance
+///
+/// Parameters:
+/// - password: User password (typically the mnemonic phrase)
+/// - password_len: Length of password in bytes
+/// - salt: Salt value (typically "mnemonic" + optional passphrase)
+/// - salt_len: Length of salt in bytes
+/// - iterations: Number of iterations (BIP39 standard: 2048)
+/// - output: Output buffer for derived key
+/// - output_len: Desired key length in bytes (BIP39 standard: 64 bytes)
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+///
+/// Performance:
+/// - With 2048 iterations (BIP39 standard), expect ~10-20ms on modern hardware
+/// - SHA512 is ~2x slower than SHA256 but provides better security margins
+export fn quantum_pbkdf2_sha512(
+    password: [*c]const u8,
+    password_len: usize,
+    salt: [*c]const u8,
+    salt_len: usize,
+    iterations: u32,
+    output: [*c]u8,
+    output_len: usize,
+) c_int {
+    if (password_len > 0 and @intFromPtr(password) == 0) {
+        setLastError("PBKDF2-SHA512: password pointer is null");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (salt_len > 0 and @intFromPtr(salt) == 0) {
+        setLastError("PBKDF2-SHA512: salt pointer is null");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    if (@intFromPtr(output) == 0 or output_len == 0) {
+        setLastError("PBKDF2-SHA512: invalid output parameters");
+        return @intFromEnum(QuantumCryptoError.invalid_output);
+    }
+    if (iterations == 0) {
+        setLastError("PBKDF2-SHA512: iterations must be > 0");
+        return @intFromEnum(QuantumCryptoError.invalid_input);
+    }
+    const password_slice = if (password_len > 0) password[0..password_len] else &[_]u8{};
+    const salt_slice = if (salt_len > 0) salt[0..salt_len] else &[_]u8{};
+    const output_slice = output[0..output_len];
+    crypto.pwhash.pbkdf2(output_slice, password_slice, salt_slice, iterations, crypto.auth.hmac.sha2.HmacSha512) catch {
+        setLastError("PBKDF2-SHA512: derivation failed");
         return @intFromEnum(QuantumCryptoError.invalid_input);
     };
     return @intFromEnum(QuantumCryptoError.success);
