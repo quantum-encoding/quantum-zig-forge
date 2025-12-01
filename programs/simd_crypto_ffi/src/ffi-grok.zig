@@ -1768,3 +1768,288 @@ export fn quantum_spv_header_size() usize {
 export fn quantum_spv_proof_size() usize {
     return @sizeOf(CMerkleProof);
 }
+
+// =============================================================================
+// BIP32 HD KEY DERIVATION
+// =============================================================================
+
+const bip32 = @import("bitcoin/bip32.zig");
+
+/// C-compatible Extended Key structure
+pub const CExtendedKey = extern struct {
+    private_key: [32]u8,
+    public_key: [33]u8,
+    chain_code: [32]u8,
+    depth: u8,
+    parent_fingerprint: [4]u8,
+    child_index: u32,
+    is_private: u8, // 1 = private, 0 = public only
+};
+
+/// BIP32 result codes
+pub const Bip32Result = enum(c_int) {
+    success = 0,
+    invalid_seed = -1,
+    invalid_key = -2,
+    invalid_path = -3,
+    hardened_public = -4,
+    invalid_checksum = -5,
+    invalid_version = -6,
+    point_at_infinity = -7,
+    null_pointer = -8,
+    buffer_too_small = -9,
+};
+
+/// Create master key from seed
+///
+/// Parameters:
+/// - seed: BIP39 seed bytes (16-64 bytes)
+/// - seed_len: Length of seed
+/// - out_key: Output extended key structure
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_bip32_from_seed(
+    seed: [*c]const u8,
+    seed_len: usize,
+    out_key: *CExtendedKey,
+) c_int {
+    if (@intFromPtr(seed) == 0 or seed_len == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+    if (@intFromPtr(out_key) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+
+    const master = bip32.ExtendedKey.fromSeed(seed[0..seed_len]) catch |err| {
+        return switch (err) {
+            error.InvalidSeed => @intFromEnum(Bip32Result.invalid_seed),
+            error.InvalidKey => @intFromEnum(Bip32Result.invalid_key),
+            else => @intFromEnum(Bip32Result.invalid_key),
+        };
+    };
+
+    copyExtendedKey(&master, out_key);
+    return @intFromEnum(Bip32Result.success);
+}
+
+/// Derive child key at index
+///
+/// Parameters:
+/// - parent: Parent extended key
+/// - index: Child index (add 0x80000000 for hardened)
+/// - out_child: Output child key structure
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_bip32_derive_child(
+    parent: *const CExtendedKey,
+    index: u32,
+    out_child: *CExtendedKey,
+) c_int {
+    if (@intFromPtr(parent) == 0 or @intFromPtr(out_child) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+
+    const parent_key = convertFromCKey(parent);
+    const child = parent_key.deriveChild(index) catch |err| {
+        return switch (err) {
+            error.HardenedPublicDerivation => @intFromEnum(Bip32Result.hardened_public),
+            error.InvalidKey => @intFromEnum(Bip32Result.invalid_key),
+            error.PointAtInfinity => @intFromEnum(Bip32Result.point_at_infinity),
+            else => @intFromEnum(Bip32Result.invalid_key),
+        };
+    };
+
+    copyExtendedKey(&child, out_child);
+    return @intFromEnum(Bip32Result.success);
+}
+
+/// Derive key from path string (e.g., "m/44'/0'/0'/0/0")
+///
+/// Parameters:
+/// - master: Master extended key
+/// - path: Null-terminated path string
+/// - path_len: Length of path string
+/// - out_key: Output derived key structure
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_bip32_derive_path(
+    master: *const CExtendedKey,
+    path: [*c]const u8,
+    path_len: usize,
+    out_key: *CExtendedKey,
+) c_int {
+    if (@intFromPtr(master) == 0 or @intFromPtr(path) == 0 or @intFromPtr(out_key) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+    if (path_len == 0) {
+        return @intFromEnum(Bip32Result.invalid_path);
+    }
+
+    const master_key = convertFromCKey(master);
+    const derived = master_key.derivePath(path[0..path_len]) catch |err| {
+        return switch (err) {
+            error.InvalidPath => @intFromEnum(Bip32Result.invalid_path),
+            error.HardenedPublicDerivation => @intFromEnum(Bip32Result.hardened_public),
+            error.InvalidKey => @intFromEnum(Bip32Result.invalid_key),
+            error.PointAtInfinity => @intFromEnum(Bip32Result.point_at_infinity),
+            else => @intFromEnum(Bip32Result.invalid_key),
+        };
+    };
+
+    copyExtendedKey(&derived, out_key);
+    return @intFromEnum(Bip32Result.success);
+}
+
+/// Get the public-key-only version of an extended key
+///
+/// Parameters:
+/// - key: Extended key (private or public)
+/// - out_public: Output public-only key
+///
+/// Returns: 0 on success
+export fn quantum_bip32_neuter(
+    key: *const CExtendedKey,
+    out_public: *CExtendedKey,
+) c_int {
+    if (@intFromPtr(key) == 0 or @intFromPtr(out_public) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+
+    const internal_key = convertFromCKey(key);
+    const neutered = internal_key.neuter();
+    copyExtendedKey(&neutered, out_public);
+    return @intFromEnum(Bip32Result.success);
+}
+
+/// Serialize extended key to bytes (for Base58Check encoding)
+///
+/// Parameters:
+/// - key: Extended key to serialize
+/// - mainnet: 1 for mainnet, 0 for testnet
+/// - out_bytes: Output buffer (must be at least 82 bytes)
+///
+/// Returns: 82 (serialized length) on success, negative error code on failure
+export fn quantum_bip32_serialize(
+    key: *const CExtendedKey,
+    mainnet: c_int,
+    out_bytes: [*c]u8,
+) c_int {
+    if (@intFromPtr(key) == 0 or @intFromPtr(out_bytes) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+
+    const internal_key = convertFromCKey(key);
+    const serialized = internal_key.serialize(mainnet != 0);
+    @memcpy(out_bytes[0..82], &serialized);
+    return 82;
+}
+
+/// Generate P2WPKH (native SegWit) address from public key
+///
+/// Parameters:
+/// - public_key: 33-byte compressed public key
+/// - mainnet: 1 for mainnet (bc1q...), 0 for testnet (tb1q...)
+/// - out_address: Output buffer for address string (at least 90 bytes)
+///
+/// Returns: Length of address string on success, negative error code on failure
+export fn quantum_bip32_p2wpkh_address(
+    public_key: [*c]const u8,
+    mainnet: c_int,
+    out_address: [*c]u8,
+) c_int {
+    if (@intFromPtr(public_key) == 0 or @intFromPtr(out_address) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+
+    var pubkey_arr: [33]u8 = undefined;
+    @memcpy(&pubkey_arr, public_key[0..33]);
+
+    var output: [90]u8 = undefined;
+    const len = bip32.generateP2wpkhAddress(&pubkey_arr, mainnet != 0, &output);
+
+    @memcpy(out_address[0..len], output[0..len]);
+    return @intCast(len);
+}
+
+/// Get Hash160 of a public key (for P2PKH/P2WPKH addresses)
+///
+/// Parameters:
+/// - public_key: 33-byte compressed public key
+/// - out_hash: Output buffer for 20-byte hash
+///
+/// Returns: 0 on success
+export fn quantum_bip32_hash160(
+    public_key: [*c]const u8,
+    out_hash: [*c]u8,
+) c_int {
+    if (@intFromPtr(public_key) == 0 or @intFromPtr(out_hash) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+
+    var pubkey_arr: [33]u8 = undefined;
+    @memcpy(&pubkey_arr, public_key[0..33]);
+
+    const hash = bip32.hash160(&pubkey_arr);
+    @memcpy(out_hash[0..20], &hash);
+    return @intFromEnum(Bip32Result.success);
+}
+
+/// Compute RIPEMD160 hash
+///
+/// Parameters:
+/// - input: Input data
+/// - input_len: Length of input
+/// - out_hash: Output buffer for 20-byte hash
+///
+/// Returns: 0 on success
+export fn quantum_ripemd160(
+    input: [*c]const u8,
+    input_len: usize,
+    out_hash: [*c]u8,
+) c_int {
+    if (input_len > 0 and @intFromPtr(input) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+    if (@intFromPtr(out_hash) == 0) {
+        return @intFromEnum(Bip32Result.null_pointer);
+    }
+
+    const input_slice = if (input_len > 0) input[0..input_len] else &[_]u8{};
+    var hash: [20]u8 = undefined;
+    bip32.Ripemd160.hash(input_slice, &hash, .{});
+    @memcpy(out_hash[0..20], &hash);
+    return @intFromEnum(Bip32Result.success);
+}
+
+/// Get size of CExtendedKey struct
+export fn quantum_bip32_key_size() usize {
+    return @sizeOf(CExtendedKey);
+}
+
+/// Get hardened offset constant (0x80000000)
+export fn quantum_bip32_hardened_offset() u32 {
+    return bip32.HARDENED_OFFSET;
+}
+
+// Helper functions
+fn copyExtendedKey(src: *const bip32.ExtendedKey, dst: *CExtendedKey) void {
+    @memcpy(&dst.private_key, &src.private_key);
+    @memcpy(&dst.public_key, &src.public_key);
+    @memcpy(&dst.chain_code, &src.chain_code);
+    dst.depth = src.depth;
+    @memcpy(&dst.parent_fingerprint, &src.parent_fingerprint);
+    dst.child_index = src.child_index;
+    dst.is_private = if (src.is_private) 1 else 0;
+}
+
+fn convertFromCKey(c_key: *const CExtendedKey) bip32.ExtendedKey {
+    return bip32.ExtendedKey{
+        .private_key = c_key.private_key,
+        .public_key = c_key.public_key,
+        .chain_code = c_key.chain_code,
+        .depth = c_key.depth,
+        .parent_fingerprint = c_key.parent_fingerprint,
+        .child_index = c_key.child_index,
+        .is_private = c_key.is_private != 0,
+    };
+}
