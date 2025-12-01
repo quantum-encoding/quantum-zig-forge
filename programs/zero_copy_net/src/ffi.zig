@@ -83,8 +83,9 @@ const ServerContext = struct {
         const ctx = try allocator.create(ServerContext);
         errdefer allocator.destroy(ctx);
 
-        // Initialize io_uring
-        ctx.ring = IoUring.init(config.io_uring_entries, 0) catch return error.IoUringInit;
+        // Initialize io_uring (cast to u16 as IoUring.init expects u16)
+        const entries: u16 = @intCast(@min(config.io_uring_entries, 65535));
+        ctx.ring = IoUring.init(entries, 0) catch return error.IoUringInit;
         errdefer ctx.ring.deinit();
 
         // Initialize buffer pool
