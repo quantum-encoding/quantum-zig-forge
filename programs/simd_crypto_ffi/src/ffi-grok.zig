@@ -634,3 +634,87 @@ test "secure memory operations" {
     try std.testing.expectEqual(@as(c_int, 0), quantum_secure_compare(&a, &b, 3));
     try std.testing.expectEqual(@as(c_int, 1), quantum_secure_compare(&a, &c, 3));
 }
+test "SHA-512 correctness" {
+    const input = "hello world";
+    var output: [64]u8 = undefined;
+    const result = quantum_sha512(input.ptr, input.len, &output);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+    // Known SHA-512 hash of "hello world"
+    const expected_hex = "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f";
+    var expected: [64]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&expected, expected_hex);
+    try std.testing.expectEqualSlices(u8, &expected, &output);
+}
+test "HMAC-SHA512 correctness" {
+    const key = "secret";
+    const message = "hello world";
+    var output: [64]u8 = undefined;
+    const result = quantum_hmac_sha512(key.ptr, key.len, message.ptr, message.len, &output);
+    try std.testing.expectEqual(@as(c_int, 0), result);
+    // Verify it's not all zeros
+    var is_zero = true;
+    for (output) |byte| {
+        if (byte != 0) {
+            is_zero = false;
+            break;
+        }
+    }
+    try std.testing.expect(!is_zero);
+}
+test "BIP39 PBKDF2-SHA512 Test Vector 1" {
+    // BIP39 official test vector
+    // Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+    // Passphrase: "" (empty)
+    // Expected seed: 0xc55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04
+
+    const mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const salt = "mnemonic"; // BIP39 salt is "mnemonic" + optional passphrase
+    const iterations = 2048; // BIP39 standard
+    var output: [64]u8 = undefined;
+
+    const result = quantum_pbkdf2_sha512(
+        mnemonic.ptr,
+        mnemonic.len,
+        salt.ptr,
+        salt.len,
+        iterations,
+        &output,
+        64,
+    );
+    try std.testing.expectEqual(@as(c_int, 0), result);
+
+    // Expected BIP39 seed for this mnemonic
+    const expected_hex = "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04";
+    var expected: [64]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&expected, expected_hex);
+
+    try std.testing.expectEqualSlices(u8, &expected, &output);
+}
+test "BIP39 PBKDF2-SHA512 Test Vector 2" {
+    // BIP39 test vector with passphrase
+    // Mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow"
+    // Passphrase: "TREZOR"
+    // Expected: 0x2e8905819b8723fe2c1d161860e5ee1830318dbf49a83bd451cfb8440c28bd6fa457fe1296106559a3c80937a1c1069be3a3a5bd381ee6260e8d9739fce1f607
+
+    const mnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const salt = "mnemonicTREZOR"; // "mnemonic" + "TREZOR"
+    const iterations = 2048;
+    var output: [64]u8 = undefined;
+
+    const result = quantum_pbkdf2_sha512(
+        mnemonic.ptr,
+        mnemonic.len,
+        salt.ptr,
+        salt.len,
+        iterations,
+        &output,
+        64,
+    );
+    try std.testing.expectEqual(@as(c_int, 0), result);
+
+    const expected_hex = "2e8905819b8723fe2c1d161860e5ee1830318dbf49a83bd451cfb8440c28bd6fa457fe1296106559a3c80937a1c1069be3a3a5bd381ee6260e8d9739fce1f607";
+    var expected: [64]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&expected, expected_hex);
+
+    try std.testing.expectEqualSlices(u8, &expected, &output);
+}
