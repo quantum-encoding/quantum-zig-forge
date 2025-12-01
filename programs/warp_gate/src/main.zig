@@ -67,6 +67,7 @@ const Args = struct {
     verbose: bool = false,
     quiet: bool = false,
     no_mdns: bool = false,
+    json: bool = false, // JSON output mode for Tauri sidecar
 
     const Command = enum {
         send,
@@ -132,6 +133,8 @@ fn parseArgs() !Args {
             args.quiet = true;
         } else if (std.mem.eql(u8, arg, "--no-mdns")) {
             args.no_mdns = true;
+        } else if (std.mem.eql(u8, arg, "--json") or std.mem.eql(u8, arg, "-j")) {
+            args.json = true;
         }
     }
 
@@ -143,8 +146,18 @@ fn cmdSend(allocator: std.mem.Allocator, args: Args) !void {
 
     // Verify path exists
     std.fs.cwd().access(path, .{}) catch |err| {
-        printError("Cannot access '{s}': {}", .{ path, err });
+        if (args.json) {
+            jsonEvent("error", .{ .message = "Cannot access path", .path = path });
+        } else {
+            printError("Cannot access '{s}': {}", .{ path, err });
+        }
         return err;
+    };
+
+    // Get file size for reporting
+    const file_size = blk: {
+        const stat = std.fs.cwd().statFile(path) catch break :blk @as(u64, 0);
+        break :blk stat.size;
     };
 
     // Create session
@@ -153,52 +166,87 @@ fn cmdSend(allocator: std.mem.Allocator, args: Args) !void {
 
     // Display transfer code
     const code_str = session.getCodeString();
-    printBanner();
-    print("\n  \x1b[1;32mTransfer code:\x1b[0m \x1b[1;37m{s}\x1b[0m\n", .{code_str});
-    print("\n  Share this code with the receiver.\n", .{});
-    print("  Waiting for connection...\n\n", .{});
+
+    if (args.json) {
+        jsonEvent("code_generated", .{
+            .code = &code_str,
+            .path = path,
+            .size = file_size,
+        });
+    } else {
+        printBanner();
+        print("\n  \x1b[1;32mTransfer code:\x1b[0m \x1b[1;37m{s}\x1b[0m\n", .{code_str});
+        print("\n  Share this code with the receiver.\n", .{});
+        print("  Waiting for connection...\n\n", .{});
+    }
 
     // Start discovery
     if (!args.no_mdns) {
+        if (args.json) {
+            jsonEvent("state", .{ .state = "discovering" });
+        }
         session.connect() catch |err| {
-            if (args.verbose) {
+            if (args.verbose and !args.json) {
                 printError("Discovery failed: {}", .{err});
             }
         };
     }
 
     // Wait for peer connection
-    print("  \x1b[33m⏳\x1b[0m Discovering peer...\n", .{});
+    if (!args.json) {
+        print("  \x1b[33m⏳\x1b[0m Discovering peer...\n", .{});
+    }
 
-    // In a real implementation, we'd wait for connection here
-    // For now, show a placeholder
     var i: u32 = 0;
-    while (i < 30) : (i += 1) {
-        print("\r  \x1b[33m⏳\x1b[0m Waiting... {d}s", .{i});
+    while (i < 60) : (i += 1) {
+        if (!args.json) {
+            print("\r  \x1b[33m⏳\x1b[0m Waiting... {d}s", .{i});
+        }
         std.posix.nanosleep(1, 0);
 
         // Check for peer
-        if (session.state == .connected) break;
+        if (session.state == .connecting or session.state == .transferring) {
+            if (args.json) {
+                jsonEvent("state", .{ .state = "connected" });
+            }
+            break;
+        }
     }
 
-    if (session.state != .connected) {
-        print("\n\n  \x1b[31m✗\x1b[0m Connection timeout. Peer may not be reachable.\n", .{});
-        print("    Try:\n", .{});
-        print("    • Ensure peer is on same network (for local transfers)\n", .{});
-        print("    • Check firewall settings\n", .{});
-        print("    • Verify the transfer code\n\n", .{});
+    if (session.state != .connecting and session.state != .transferring) {
+        if (args.json) {
+            jsonEvent("error", .{ .message = "Connection timeout" });
+        } else {
+            print("\n\n  \x1b[31m✗\x1b[0m Connection timeout. Peer may not be reachable.\n", .{});
+            print("    Try:\n", .{});
+            print("    • Ensure peer is on same network (for local transfers)\n", .{});
+            print("    • Check firewall settings\n", .{});
+            print("    • Verify the transfer code\n\n", .{});
+        }
         return error.ConnectionTimeout;
     }
 
     // Start transfer
-    print("\n  \x1b[32m✓\x1b[0m Connected! Starting transfer...\n\n", .{});
+    if (args.json) {
+        jsonEvent("state", .{ .state = "transferring" });
+    } else {
+        print("\n  \x1b[32m✓\x1b[0m Connected! Starting transfer...\n\n", .{});
+    }
 
     session.send(path) catch |err| {
-        printError("Transfer failed: {}", .{err});
+        if (args.json) {
+            jsonEvent("error", .{ .message = "Transfer failed" });
+        } else {
+            printError("Transfer failed: {}", .{err});
+        }
         return err;
     };
 
-    print("  \x1b[32m✓\x1b[0m Transfer complete!\n\n", .{});
+    if (args.json) {
+        jsonEvent("state", .{ .state = "completed" });
+    } else {
+        print("  \x1b[32m✓\x1b[0m Transfer complete!\n\n", .{});
+    }
 }
 
 fn cmdRecv(allocator: std.mem.Allocator, args: Args) !void {
@@ -207,8 +255,12 @@ fn cmdRecv(allocator: std.mem.Allocator, args: Args) !void {
 
     // Validate code format
     _ = WarpCode.parse(code_str) catch {
-        printError("Invalid transfer code: '{s}'", .{code_str});
-        print("\n  Expected format: warp-XXX-word (e.g., warp-729-alpha)\n\n", .{});
+        if (args.json) {
+            jsonEvent("error", .{ .message = "Invalid transfer code", .code = code_str });
+        } else {
+            printError("Invalid transfer code: '{s}'", .{code_str});
+            print("\n  Expected format: warp-XXX-word (e.g., warp-729-alpha)\n\n", .{});
+        }
         return error.InvalidCode;
     };
 
@@ -218,48 +270,80 @@ fn cmdRecv(allocator: std.mem.Allocator, args: Args) !void {
 
     try session.setCode(code_str);
 
-    printBanner();
-    print("\n  \x1b[1;32mConnecting with code:\x1b[0m {s}\n", .{code_str});
-    print("  Destination: {s}\n\n", .{dest});
+    if (args.json) {
+        jsonEvent("state", .{ .state = "connecting", .code = code_str, .dest = dest });
+    } else {
+        printBanner();
+        print("\n  \x1b[1;32mConnecting with code:\x1b[0m {s}\n", .{code_str});
+        print("  Destination: {s}\n\n", .{dest});
+    }
 
     // Start discovery
     if (!args.no_mdns) {
+        if (args.json) {
+            jsonEvent("state", .{ .state = "discovering" });
+        }
         session.connect() catch |err| {
-            if (args.verbose) {
+            if (args.verbose and !args.json) {
                 printError("Discovery failed: {}", .{err});
             }
         };
     }
 
-    print("  \x1b[33m⏳\x1b[0m Searching for sender...\n", .{});
+    if (!args.json) {
+        print("  \x1b[33m⏳\x1b[0m Searching for sender...\n", .{});
+    }
 
     // Wait for peer
     var i: u32 = 0;
-    while (i < 30) : (i += 1) {
-        print("\r  \x1b[33m⏳\x1b[0m Searching... {d}s", .{i});
+    while (i < 60) : (i += 1) {
+        if (!args.json) {
+            print("\r  \x1b[33m⏳\x1b[0m Searching... {d}s", .{i});
+        }
         std.posix.nanosleep(1, 0);
 
-        if (session.state == .connected) break;
+        if (session.state == .connecting or session.state == .transferring) {
+            if (args.json) {
+                jsonEvent("state", .{ .state = "connected" });
+            }
+            break;
+        }
     }
 
-    if (session.state != .connected) {
-        print("\n\n  \x1b[31m✗\x1b[0m Could not find sender.\n", .{});
-        print("    Verify:\n", .{});
-        print("    • The transfer code is correct\n", .{});
-        print("    • Sender is still waiting\n", .{});
-        print("    • Both devices can reach each other\n\n", .{});
+    if (session.state != .connecting and session.state != .transferring) {
+        if (args.json) {
+            jsonEvent("error", .{ .message = "Could not find sender" });
+        } else {
+            print("\n\n  \x1b[31m✗\x1b[0m Could not find sender.\n", .{});
+            print("    Verify:\n", .{});
+            print("    • The transfer code is correct\n", .{});
+            print("    • Sender is still waiting\n", .{});
+            print("    • Both devices can reach each other\n\n", .{});
+        }
         return error.ConnectionTimeout;
     }
 
-    print("\n  \x1b[32m✓\x1b[0m Connected! Receiving files...\n\n", .{});
+    if (args.json) {
+        jsonEvent("state", .{ .state = "transferring" });
+    } else {
+        print("\n  \x1b[32m✓\x1b[0m Connected! Receiving files...\n\n", .{});
+    }
 
     // Receive files
     session.receive(dest) catch |err| {
-        printError("Receive failed: {}", .{err});
+        if (args.json) {
+            jsonEvent("error", .{ .message = "Receive failed" });
+        } else {
+            printError("Receive failed: {}", .{err});
+        }
         return err;
     };
 
-    print("  \x1b[32m✓\x1b[0m Received successfully to: {s}\n\n", .{dest});
+    if (args.json) {
+        jsonEvent("state", .{ .state = "completed", .dest = dest });
+    } else {
+        print("  \x1b[32m✓\x1b[0m Received successfully to: {s}\n\n", .{dest});
+    }
 }
 
 fn cmdStatus(allocator: std.mem.Allocator) !void {
@@ -310,6 +394,61 @@ fn print(comptime fmt: []const u8, args: anytype) void {
 
 fn printError(comptime fmt: []const u8, args: anytype) void {
     std.debug.print("\x1b[31mError:\x1b[0m " ++ fmt ++ "\n", args);
+}
+
+/// Emit a JSON event to stdout (for Tauri sidecar integration)
+/// Uses a simple buffer-based approach for Zig 0.16 compatibility
+fn jsonEvent(event_type: []const u8, data: anytype) void {
+    var buffer: [4096]u8 = undefined;
+    var pos: usize = 0;
+
+    // Write opening
+    const opening = std.fmt.bufPrint(buffer[pos..], "{{\"event\":\"{s}\",\"data\":{{", .{event_type}) catch return;
+    pos += opening.len;
+
+    const DataType = @TypeOf(data);
+    const fields = std.meta.fields(DataType);
+    var first = true;
+
+    inline for (fields) |field| {
+        if (!first) {
+            if (pos < buffer.len) {
+                buffer[pos] = ',';
+                pos += 1;
+            }
+        }
+        first = false;
+
+        const value = @field(data, field.name);
+        const FieldType = @TypeOf(value);
+
+        if (FieldType == []const u8) {
+            const part = std.fmt.bufPrint(buffer[pos..], "\"{s}\":\"{s}\"", .{ field.name, value }) catch return;
+            pos += part.len;
+        } else if (FieldType == *const [15]u8) {
+            // WarpCode string buffer - trim trailing spaces
+            const str = std.mem.trimRight(u8, value, " ");
+            const part = std.fmt.bufPrint(buffer[pos..], "\"{s}\":\"{s}\"", .{ field.name, str }) catch return;
+            pos += part.len;
+        } else if (@typeInfo(FieldType) == .pointer) {
+            // Generic pointer to array - print as string
+            const part = std.fmt.bufPrint(buffer[pos..], "\"{s}\":\"{s}\"", .{ field.name, value }) catch return;
+            pos += part.len;
+        } else if (@typeInfo(FieldType) == .int) {
+            const part = std.fmt.bufPrint(buffer[pos..], "\"{s}\":{d}", .{ field.name, value }) catch return;
+            pos += part.len;
+        } else {
+            const part = std.fmt.bufPrint(buffer[pos..], "\"{s}\":null", .{field.name}) catch return;
+            pos += part.len;
+        }
+    }
+
+    // Write closing and newline
+    const closing = std.fmt.bufPrint(buffer[pos..], "}}}}\n", .{}) catch return;
+    pos += closing.len;
+
+    // Write to stdout
+    std.fs.File.stdout().writeAll(buffer[0..pos]) catch return;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

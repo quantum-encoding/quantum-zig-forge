@@ -9,7 +9,7 @@ quantum-zig-forge/
 ├── programs/             # Standalone programs
 │   ├── zig_ai/           # Universal AI CLI (Claude, DeepSeek, Gemini, Grok, Vertex)
 │   ├── http_sentinel/    # Production HTTP client library with AI providers
-│   │   └── programs/quantum_curl/  # High-velocity HTTP router [PREMIER]
+│   ├── quantum_curl/     # High-velocity HTTP router [PREMIER]
 │   ├── guardian_shield/  # Multi-layered Linux security framework
 │   ├── chronos_engine/   # Sovereign Clock temporal tracking system
 │   ├── zig_jail/         # Kernel-enforced syscall sandbox
@@ -26,7 +26,15 @@ quantum-zig-forge/
 │   ├── zero_copy_net/       # io_uring zero-copy network stack
 │   ├── simd_crypto/         # SIMD-accelerated cryptographic primitives [STUBBED]
 │   ├── memory_pool/         # Fixed-size memory pool allocator [WIP]
-│   └── lockfree_queue/      # Lock-free SPSC/MPMC queues [WIP]
+│   ├── lockfree_queue/      # Lock-free SPSC/MPMC queues [WIP]
+│   ├── distributed_kv/      # Raft-based distributed key-value store
+│   ├── zig_pdf_engine/      # PDF generation and parsing library
+│   ├── zig_pdf_generator/   # Cross-platform PDF library with C FFI
+│   ├── wasm_runtime/        # WebAssembly interpreter/runtime
+│   ├── zig_dns_server/      # Authoritative DNS server
+│   ├── zig_reverse_proxy/   # HTTP reverse proxy with load balancing
+│   ├── warp_gate/           # P2P file transfer (NAT traversal, encrypted)
+│   └── terminal_mux/        # Terminal multiplexer (tmux alternative)
 ├── libs/                 # Shared libraries
 ├── docs/                 # Monorepo-wide documentation
 ├── tests/                # Integration tests
@@ -52,6 +60,7 @@ All binaries will be placed in `zig-out/bin/` at the repository root.
 ```bash
 zig build zig_ai
 zig build http_sentinel
+zig build quantum_curl
 zig build guardian_shield
 zig build chronos_engine
 zig build zig_jail
@@ -69,6 +78,14 @@ zig build zero_copy_net
 zig build simd_crypto
 zig build memory_pool
 zig build lockfree_queue
+zig build distributed_kv
+zig build zig_pdf_engine
+zig build zig_pdf_generator
+zig build wasm_runtime
+zig build zig_dns_server
+zig build zig_reverse_proxy
+zig build warp_gate
+zig build terminal_mux
 ```
 
 ### Build All Programs
@@ -162,8 +179,6 @@ A production-grade HTTP client library for Zig 0.16.0+, built on `std.Io.Threade
 
 Quantum Curl is not a curl clone. It is a strategic weapon designed for the orchestration and stress-testing of complex microservice architectures. The core innovation: decoupling the **Battle Plan** (JSONL manifest) from the **Execution Engine** (high-concurrency Zig runtime).
 
-**Location:** `programs/http_sentinel/programs/quantum_curl/`
-
 **Performance:**
 | Metric | Value | Comparison |
 |--------|-------|------------|
@@ -186,9 +201,11 @@ echo '{"id":"1","method":"GET","url":"https://httpbin.org/get"}' | quantum-curl
 quantum-curl --file battle-plan.jsonl --concurrency 100
 ```
 
-**Documentation:** [programs/http_sentinel/programs/quantum_curl/README.md](programs/http_sentinel/programs/quantum_curl/README.md)
+**Documentation:** [programs/quantum_curl/README.md](programs/quantum_curl/README.md)
 
 **Binary:** `quantum-curl`
+
+---
 
 ### guardian_shield
 
@@ -568,6 +585,219 @@ Lock-free SPSC (Single Producer Single Consumer) and MPMC (Multi Producer Multi 
 **Documentation:** [programs/lockfree_queue/README.md](programs/lockfree_queue/README.md)
 
 **Status:** Work in progress - SPSC queue complete, MPMC queue implemented.
+
+### distributed_kv
+
+Raft-based distributed key-value store with strong consistency guarantees.
+
+**Features:**
+- Raft consensus algorithm for leader election and log replication
+- Persistent Write-Ahead Log (WAL) with CRC32 checksums and crash recovery
+- TTL support for key expiration
+- Compare-and-swap (CAS) atomic operations
+- Watch/subscribe for key change notifications
+- TCP-based RPC for cluster communication
+- Client library with automatic failover
+
+**Documentation:** [programs/distributed_kv/README.md](programs/distributed_kv/README.md)
+
+**Binaries:**
+- `kv-server` - Distributed KV node server
+- `kv-client` - Command-line client tool
+
+**Usage:**
+```bash
+# Start a 3-node cluster
+kv-server --id 1 --port 8000 --peer 2=127.0.0.1:8001 --peer 3=127.0.0.1:8002
+kv-server --id 2 --port 8001 --peer 1=127.0.0.1:8000 --peer 3=127.0.0.1:8002
+kv-server --id 3 --port 8002 --peer 1=127.0.0.1:8000 --peer 2=127.0.0.1:8001
+
+# Client operations
+kv-client --server 127.0.0.1:8000 set mykey "myvalue"
+kv-client --server 127.0.0.1:8000 get mykey
+```
+
+### zig_pdf_engine
+
+PDF generation and parsing library with zero external dependencies.
+
+**Features:**
+- PDF 1.7 specification compliant generation
+- Text rendering with built-in fonts (Helvetica, Times, Courier)
+- Vector graphics (lines, rectangles, circles, Bézier curves)
+- Color support (RGB, CMYK, grayscale)
+- Image embedding (JPEG, PNG with zlib compression)
+- PDF parsing and text extraction
+- Multi-page document support
+- Page templates and reusable content
+
+**Documentation:** [programs/zig_pdf_engine/README.md](programs/zig_pdf_engine/README.md)
+
+**Binaries:**
+- `pdf-gen` - PDF generation CLI
+- `pdf-info` - PDF metadata extraction
+- `pdf-text` - PDF text extraction
+
+### zig_pdf_generator
+
+Cross-platform PDF generation library with C FFI for mobile and embedded systems.
+
+**Features:**
+- High-performance PDF generation library
+- C FFI exports for JNI/FFI integration
+- Static and shared library builds
+- Cross-compilation support (Android ARM64/ARMv7, iOS ARM64, macOS, Windows)
+- Zero external dependencies in core
+
+**Documentation:** [programs/zig_pdf_generator/README.md](programs/zig_pdf_generator/README.md)
+
+**Binaries:**
+- `pdf-gen` - PDF generation CLI
+- `libzigpdf.a` - Static library
+- `libzigpdf_shared.so` - Shared library for FFI
+
+**Build Targets:**
+```bash
+# Native build
+zig build
+
+# Android ARM64 cross-compile
+zig build -Dtarget=aarch64-linux-android
+
+# Shared library for JNI
+zig build shared
+```
+
+### wasm_runtime
+
+WebAssembly interpreter/runtime with full WASI support.
+
+**Features:**
+- WebAssembly MVP specification compliant
+- WASI preview1 system interface
+- Stack-based virtual machine
+- Memory management with bounds checking
+- Import/export resolution
+- Multi-module linking
+- Trap handling and debugging support
+
+**Documentation:** [programs/wasm_runtime/README.md](programs/wasm_runtime/README.md)
+
+**Binaries:**
+- `wasm` - WebAssembly runtime CLI (`wasm run`, `wasm info`, `wasm validate`)
+
+### zig_dns_server
+
+Authoritative DNS server with zone file support.
+
+**Features:**
+- RFC 1035 compliant DNS protocol
+- Zone file parsing (BIND format)
+- Support for A, AAAA, CNAME, MX, NS, TXT, SOA records
+- UDP and TCP transport
+- Query logging and statistics
+- Configurable TTL and caching
+
+**Documentation:** [programs/zig_dns_server/README.md](programs/zig_dns_server/README.md)
+
+**Binaries:**
+- `dns-server` - Authoritative DNS server
+
+**Usage:**
+```bash
+dns-server -z zones/example.com.zone -p 5353
+dig @127.0.0.1 -p 5353 example.com A
+```
+
+### zig_reverse_proxy
+
+HTTP reverse proxy with load balancing and health checking.
+
+**Features:**
+- Round-robin and least-connections load balancing
+- Active health checking with configurable intervals
+- Connection pooling to backends
+- Request/response header manipulation
+- Access logging with timing metrics
+- Graceful shutdown and hot reload
+- WebSocket proxying support
+
+**Documentation:** [programs/zig_reverse_proxy/README.md](programs/zig_reverse_proxy/README.md)
+
+**Binaries:**
+- `reverse-proxy` - HTTP reverse proxy server
+
+### warp_gate
+
+Peer-to-peer file transfer without cloud intermediaries.
+
+**Features:**
+- No cloud servers - Direct device-to-device transfer
+- NAT traversal via STUN/UDP hole punching
+- Local discovery via mDNS (instant on same LAN)
+- ChaCha20-Poly1305 AEAD encryption
+- Human-readable transfer codes (e.g., `warp-729-alpha`)
+- BLAKE3 integrity checksums
+- Cross-platform (Linux, macOS, Windows)
+
+**Documentation:** [programs/warp_gate/README.md](programs/warp_gate/README.md)
+
+**Binaries:**
+- `warp` - P2P file transfer CLI
+
+**Usage:**
+```bash
+# Send files
+warp send ./my-project
+# Shows: Transfer code: warp-729-alpha
+
+# Receive files
+warp recv warp-729-alpha
+
+# Check network status
+warp status
+```
+
+**Performance:**
+| Operation | Throughput |
+|-----------|------------|
+| Code generation | 5.2M ops/sec |
+| Code parsing | 8.1M ops/sec |
+| Encryption (64KB) | 1500 MB/s |
+
+### terminal_mux
+
+Terminal multiplexer (tmux alternative) with native Zig configuration.
+
+**Features:**
+- PTY management for shell processes
+- Session/window/pane hierarchy
+- Full VT100/ANSI terminal emulation
+- Zig-native configuration (no config file parsing)
+- Unix socket IPC for attach/detach
+- Pane splitting (horizontal/vertical)
+- 10,000 line scrollback buffer
+- UTF-8 support
+
+**Documentation:** [programs/terminal_mux/ARCHITECTURE.md](programs/terminal_mux/ARCHITECTURE.md)
+
+**Binaries:**
+- `tmux` - Terminal multiplexer
+
+**Key Bindings (Ctrl-b prefix):**
+- `d` - Detach from session
+- `c` - Create new window
+- `n/p` - Next/previous window
+- `%` - Split pane horizontally
+- `"` - Split pane vertically
+- `o` - Switch to next pane
+
+**Usage:**
+```bash
+tmux                    # Start new session or attach
+tmux new -s dev         # Create named session
+tmux attach -t dev      # Attach to existing session
+```
 
 ## Requirements
 

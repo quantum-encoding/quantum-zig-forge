@@ -1,0 +1,25 @@
+From: quantum-zig-forge
+Subject: [PATCH 1/2] io/net: Add SocketNotListening to AcceptError
+
+The AcceptError set is missing SocketNotListening which is returned when
+accept() is called on a socket that isn't listening (EINVAL).
+
+This causes user code that returns custom errors from the accept error set
+to fail compilation because SocketNotListening is not a valid member of
+the expected error union type.
+
+---
+ lib/std/Io/net.zig | 2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/lib/std/Io/net.zig
++++ b/lib/std/Io/net.zig
+@@ -1344,6 +1344,8 @@
+         /// Firewall rules forbid connection.
+         BlockedByFirewall,
+         ProtocolFailure,
++        /// The socket is not listening for connections (EINVAL on accept).
++        SocketNotListening,
+     } || Io.UnexpectedError || Io.Cancelable;
+
+     /// Blocks until a client connects to the server.
