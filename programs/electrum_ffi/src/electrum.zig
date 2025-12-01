@@ -299,6 +299,99 @@ pub fn parseUtxoResponse(
     return utxos.toOwnedSlice(allocator);
 }
 
+/// Parse get_history response into TxHistoryEntry array
+pub fn parseHistoryResponse(
+    allocator: std.mem.Allocator,
+    json: []const u8,
+) ![]TxHistoryEntry {
+    var entries = std.ArrayListUnmanaged(TxHistoryEntry){};
+    errdefer entries.deinit(allocator);
+
+    // Find result array
+    const result_start = std.mem.indexOf(u8, json, "\"result\":") orelse return entries.toOwnedSlice(allocator);
+    var pos = result_start + 9;
+
+    // Skip to array start
+    while (pos < json.len and json[pos] != '[') : (pos += 1) {}
+    if (pos >= json.len) return entries.toOwnedSlice(allocator);
+    pos += 1; // Skip '['
+
+    // Parse each history entry object
+    while (pos < json.len) {
+        // Skip whitespace and commas
+        while (pos < json.len and (json[pos] == ' ' or json[pos] == '\n' or json[pos] == '\r' or json[pos] == '\t' or json[pos] == ',')) : (pos += 1) {}
+
+        if (pos >= json.len or json[pos] == ']') break;
+
+        if (json[pos] == '{') {
+            // Find object end
+            var depth: usize = 1;
+            const obj_start = pos;
+            pos += 1;
+            while (pos < json.len and depth > 0) : (pos += 1) {
+                if (json[pos] == '{') depth += 1;
+                if (json[pos] == '}') depth -= 1;
+            }
+
+            const obj = json[obj_start..pos];
+            if (parseHistoryObject(obj)) |entry| {
+                try entries.append(allocator, entry);
+            }
+        } else {
+            pos += 1;
+        }
+    }
+
+    return entries.toOwnedSlice(allocator);
+}
+
+fn parseHistoryObject(obj: []const u8) ?TxHistoryEntry {
+    var entry = TxHistoryEntry{
+        .txid = undefined,
+        .height = 0,
+        .fee = 0,
+    };
+
+    // Parse tx_hash
+    if (std.mem.indexOf(u8, obj, "\"tx_hash\":\"")) |pos| {
+        const start = pos + 11;
+        if (start + 64 <= obj.len) {
+            const hex = obj[start .. start + 64];
+            // Convert hex to bytes (reversed for internal format)
+            for (0..32) |i| {
+                const high = hexCharToNibble(hex[i * 2]) orelse return null;
+                const low = hexCharToNibble(hex[i * 2 + 1]) orelse return null;
+                entry.txid[31 - i] = (@as(u8, high) << 4) | @as(u8, low);
+            }
+        }
+    } else {
+        return null;
+    }
+
+    // Parse height (can be negative for unconfirmed with unconfirmed parents)
+    if (std.mem.indexOf(u8, obj, "\"height\":")) |pos| {
+        const start = pos + 9;
+        var end = start;
+        const is_negative = obj[start] == '-';
+        if (is_negative) end += 1;
+        while (end < obj.len and obj[end] >= '0' and obj[end] <= '9') : (end += 1) {}
+        if (end > start) {
+            const abs_val = std.fmt.parseInt(u32, obj[start + @as(usize, if (is_negative) 1 else 0) .. end], 10) catch 0;
+            entry.height = if (is_negative) -@as(i32, @intCast(abs_val)) else @intCast(abs_val);
+        }
+    }
+
+    // Parse fee (optional field)
+    if (std.mem.indexOf(u8, obj, "\"fee\":")) |pos| {
+        const start = pos + 6;
+        var end = start;
+        while (end < obj.len and obj[end] >= '0' and obj[end] <= '9') : (end += 1) {}
+        entry.fee = std.fmt.parseInt(u64, obj[start..end], 10) catch 0;
+    }
+
+    return entry;
+}
+
 fn parseUtxoObject(obj: []const u8) ?Utxo {
     var utxo = Utxo{
         .txid = undefined,

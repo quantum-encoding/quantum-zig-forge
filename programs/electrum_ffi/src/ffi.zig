@@ -64,6 +64,13 @@ pub const CBalance = extern struct {
     unconfirmed: i64,
 };
 
+/// Transaction history entry
+pub const CTxHistoryEntry = extern struct {
+    txid: [32]u8,
+    height: i32,
+    fee: u64,
+};
+
 // =============================================================================
 // Scripthash Computation Functions
 // =============================================================================
@@ -180,6 +187,39 @@ export fn electrum_build_listunspent_request(
     const request = electrum.buildRequest(
         allocator,
         "blockchain.scripthash.listunspent",
+        .{scripthash_hex[0..64]},
+        request_id,
+    ) catch {
+        setLastError("Failed to build request");
+        return @intFromEnum(ElectrumResult.parse_error);
+    };
+    defer allocator.free(request);
+
+    if (request.len > out_request_size) {
+        setLastError("Buffer too small");
+        return @intFromEnum(ElectrumResult.buffer_too_small);
+    }
+
+    @memcpy(out_request[0..request.len], request);
+    return @intCast(request.len);
+}
+
+/// Build a get_history request
+export fn electrum_build_get_history_request(
+    scripthash_hex: [*c]const u8, // 64-byte hex scripthash
+    request_id: u32,
+    out_request: [*c]u8,
+    out_request_size: usize,
+) c_int {
+    if (@intFromPtr(scripthash_hex) == 0 or @intFromPtr(out_request) == 0) {
+        return @intFromEnum(ElectrumResult.null_pointer);
+    }
+
+    const allocator = std.heap.page_allocator;
+
+    const request = electrum.buildRequest(
+        allocator,
+        "blockchain.scripthash.get_history",
         .{scripthash_hex[0..64]},
         request_id,
     ) catch {
@@ -384,6 +424,38 @@ export fn electrum_parse_listunspent_response(
             .vout = utxo.vout,
             .value = utxo.value,
             .height = utxo.height,
+        };
+    }
+
+    return @intCast(copy_count);
+}
+
+/// Parse a get_history response
+/// Returns number of history entries parsed, or negative error code
+export fn electrum_parse_history_response(
+    response: [*c]const u8,
+    response_len: usize,
+    out_entries: [*c]CTxHistoryEntry,
+    max_entries: usize,
+) c_int {
+    if (@intFromPtr(response) == 0 or @intFromPtr(out_entries) == 0) {
+        return @intFromEnum(ElectrumResult.null_pointer);
+    }
+
+    const allocator = std.heap.page_allocator;
+
+    const entries = electrum.parseHistoryResponse(allocator, response[0..response_len]) catch {
+        setLastError("Failed to parse history response");
+        return @intFromEnum(ElectrumResult.parse_error);
+    };
+    defer allocator.free(entries);
+
+    const copy_count = @min(entries.len, max_entries);
+    for (entries[0..copy_count], 0..) |entry, i| {
+        out_entries[i] = CTxHistoryEntry{
+            .txid = entry.txid,
+            .height = entry.height,
+            .fee = entry.fee,
         };
     }
 
