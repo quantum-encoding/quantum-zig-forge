@@ -1426,3 +1426,345 @@ test "batch size returns correct value" {
     const size = quantum_sha256d_batch_size();
     try std.testing.expect(size == 8 or size == 16);
 }
+
+// =============================================================================
+// SPV (Simplified Payment Verification) FFI
+// =============================================================================
+//
+// These functions provide C-compatible interfaces for SPV light client
+// operations: Merkle proof verification, block header validation,
+// and proof of work verification.
+// =============================================================================
+
+/// Maximum depth of Merkle proof path
+pub const MAX_MERKLE_PROOF_DEPTH: usize = 32;
+
+/// C-compatible Block Header structure (80 bytes)
+pub const CBlockHeader = extern struct {
+    version: i32,
+    prev_block_hash: [32]u8,
+    merkle_root: [32]u8,
+    timestamp: u32,
+    bits: u32,
+    nonce: u32,
+};
+
+/// C-compatible Merkle Proof structure
+pub const CMerkleProof = extern struct {
+    /// Proof path hashes (up to 32 levels)
+    hashes: [MAX_MERKLE_PROOF_DEPTH][32]u8,
+    /// Number of hashes in the proof path
+    hash_count: u32,
+    /// Transaction index in the block
+    index: u32,
+};
+
+/// SPV Verification Result codes
+pub const SpvResult = enum(c_int) {
+    success = 0,
+    invalid_input = -1,
+    broken_chain = -2,
+    invalid_merkle_proof = -3,
+    insufficient_work = -4,
+    proof_too_deep = -5,
+};
+
+/// Verify a Merkle proof that a transaction is included in a block
+///
+/// Parameters:
+/// - tx_hash: 32-byte transaction hash (double SHA-256)
+/// - merkle_root: 32-byte Merkle root from block header
+/// - proof: Pointer to CMerkleProof structure
+///
+/// Returns:
+/// - 0 on success (proof is valid)
+/// - negative error code on failure
+export fn quantum_spv_verify_merkle_proof(
+    tx_hash: [*c]const u8,
+    merkle_root: [*c]const u8,
+    proof: *const CMerkleProof,
+) c_int {
+    if (@intFromPtr(tx_hash) == 0 or @intFromPtr(merkle_root) == 0) {
+        setLastError("SPV: null input pointer");
+        return @intFromEnum(SpvResult.invalid_input);
+    }
+    if (proof.hash_count > MAX_MERKLE_PROOF_DEPTH) {
+        setLastError("SPV: proof depth exceeds maximum");
+        return @intFromEnum(SpvResult.proof_too_deep);
+    }
+
+    // Convert to internal types
+    const tx: spv.Hash = tx_hash[0..32].*;
+    const root: spv.Hash = merkle_root[0..32].*;
+
+    // Build proof slice
+    var proof_hashes: [MAX_MERKLE_PROOF_DEPTH]spv.Hash = undefined;
+    for (0..proof.hash_count) |i| {
+        proof_hashes[i] = proof.hashes[i];
+    }
+
+    const merkle_proof = spv.MerkleProof{
+        .hashes = proof_hashes[0..proof.hash_count],
+        .index = proof.index,
+    };
+
+    if (spv.verifyMerkleProof(tx, root, merkle_proof)) {
+        return @intFromEnum(SpvResult.success);
+    } else {
+        setLastError("SPV: Merkle proof verification failed");
+        return @intFromEnum(SpvResult.invalid_merkle_proof);
+    }
+}
+
+/// Parse raw block header bytes (80 bytes) into CBlockHeader
+///
+/// Parameters:
+/// - raw_header: Pointer to 80 bytes of raw block header
+/// - parsed: Pointer to CBlockHeader to fill
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+export fn quantum_spv_parse_header(
+    raw_header: [*c]const u8,
+    parsed: *CBlockHeader,
+) c_int {
+    if (@intFromPtr(raw_header) == 0 or @intFromPtr(parsed) == 0) {
+        setLastError("SPV: null pointer");
+        return @intFromEnum(SpvResult.invalid_input);
+    }
+
+    const data: *const [80]u8 = @ptrCast(raw_header);
+    const header = spv.BlockHeader.deserialize(data);
+
+    parsed.version = header.version;
+    parsed.prev_block_hash = header.prev_block_hash;
+    parsed.merkle_root = header.merkle_root;
+    parsed.timestamp = header.timestamp;
+    parsed.bits = header.bits;
+    parsed.nonce = header.nonce;
+
+    return @intFromEnum(SpvResult.success);
+}
+
+/// Calculate block hash from header
+///
+/// Parameters:
+/// - header: Pointer to CBlockHeader
+/// - hash_out: Pointer to 32-byte output buffer (internal byte order)
+/// - display_order: If true, output is in big-endian (display format)
+///
+/// Returns:
+/// - 0 on success
+/// - negative error code on failure
+export fn quantum_spv_block_hash(
+    header: *const CBlockHeader,
+    hash_out: [*c]u8,
+    display_order: bool,
+) c_int {
+    if (@intFromPtr(header) == 0 or @intFromPtr(hash_out) == 0) {
+        setLastError("SPV: null pointer");
+        return @intFromEnum(SpvResult.invalid_input);
+    }
+
+    const internal_header = spv.BlockHeader{
+        .version = header.version,
+        .prev_block_hash = header.prev_block_hash,
+        .merkle_root = header.merkle_root,
+        .timestamp = header.timestamp,
+        .bits = header.bits,
+        .nonce = header.nonce,
+    };
+
+    var hash = internal_header.getHash();
+    if (display_order) {
+        spv.reverseHash(&hash);
+    }
+
+    @memcpy(hash_out[0..32], &hash);
+    return @intFromEnum(SpvResult.success);
+}
+
+/// Verify block header linkage to previous block
+///
+/// Parameters:
+/// - header: Pointer to CBlockHeader to verify
+/// - prev_hash: 32-byte hash of expected previous block
+///
+/// Returns:
+/// - 0 if header correctly links to prev_hash
+/// - negative error code on failure
+export fn quantum_spv_verify_linkage(
+    header: *const CBlockHeader,
+    prev_hash: [*c]const u8,
+) c_int {
+    if (@intFromPtr(header) == 0 or @intFromPtr(prev_hash) == 0) {
+        setLastError("SPV: null pointer");
+        return @intFromEnum(SpvResult.invalid_input);
+    }
+
+    const internal_header = spv.BlockHeader{
+        .version = header.version,
+        .prev_block_hash = header.prev_block_hash,
+        .merkle_root = header.merkle_root,
+        .timestamp = header.timestamp,
+        .bits = header.bits,
+        .nonce = header.nonce,
+    };
+
+    const expected_prev: spv.Hash = prev_hash[0..32].*;
+
+    spv.verifyHeaderLinkage(internal_header, expected_prev) catch |err| {
+        switch (err) {
+            spv.SpvError.BrokenChain => {
+                setLastError("SPV: broken chain - prev_block_hash mismatch");
+                return @intFromEnum(SpvResult.broken_chain);
+            },
+            else => {
+                setLastError("SPV: header verification failed");
+                return @intFromEnum(SpvResult.invalid_input);
+            },
+        }
+    };
+
+    return @intFromEnum(SpvResult.success);
+}
+
+/// Verify proof of work for a block header
+///
+/// Parameters:
+/// - header: Pointer to CBlockHeader to verify
+///
+/// Returns:
+/// - 0 if PoW is valid (hash <= target)
+/// - negative error code on failure
+export fn quantum_spv_verify_pow(
+    header: *const CBlockHeader,
+) c_int {
+    if (@intFromPtr(header) == 0) {
+        setLastError("SPV: null pointer");
+        return @intFromEnum(SpvResult.invalid_input);
+    }
+
+    const internal_header = spv.BlockHeader{
+        .version = header.version,
+        .prev_block_hash = header.prev_block_hash,
+        .merkle_root = header.merkle_root,
+        .timestamp = header.timestamp,
+        .bits = header.bits,
+        .nonce = header.nonce,
+    };
+
+    if (spv.verifyProofOfWork(internal_header)) {
+        return @intFromEnum(SpvResult.success);
+    } else {
+        setLastError("SPV: insufficient proof of work");
+        return @intFromEnum(SpvResult.insufficient_work);
+    }
+}
+
+/// Calculate difficulty from compact bits
+///
+/// Parameters:
+/// - bits: Compact difficulty target (nBits from block header)
+///
+/// Returns:
+/// - Approximate difficulty as u64
+export fn quantum_spv_difficulty(bits: u32) u64 {
+    return spv.calculateDifficulty(bits);
+}
+
+/// Full SPV payment verification
+///
+/// Verifies that a transaction is included in a valid block by:
+/// 1. Verifying header links to expected previous block
+/// 2. Optionally verifying proof of work
+/// 3. Verifying Merkle proof that tx is in block
+///
+/// Parameters:
+/// - tx_hash: 32-byte transaction hash
+/// - proof: Pointer to CMerkleProof
+/// - header: Pointer to CBlockHeader containing the transaction
+/// - prev_hash: 32-byte hash of expected previous block
+/// - check_pow: If true, verify proof of work
+///
+/// Returns:
+/// - 0 on success (payment verified)
+/// - negative error code on failure
+export fn quantum_spv_verify_payment(
+    tx_hash: [*c]const u8,
+    proof: *const CMerkleProof,
+    header: *const CBlockHeader,
+    prev_hash: [*c]const u8,
+    check_pow: bool,
+) c_int {
+    if (@intFromPtr(tx_hash) == 0 or @intFromPtr(prev_hash) == 0) {
+        setLastError("SPV: null pointer");
+        return @intFromEnum(SpvResult.invalid_input);
+    }
+    if (@intFromPtr(header) == 0 or @intFromPtr(proof) == 0) {
+        setLastError("SPV: null pointer");
+        return @intFromEnum(SpvResult.invalid_input);
+    }
+    if (proof.hash_count > MAX_MERKLE_PROOF_DEPTH) {
+        setLastError("SPV: proof depth exceeds maximum");
+        return @intFromEnum(SpvResult.proof_too_deep);
+    }
+
+    // Convert to internal types
+    const tx: spv.Hash = tx_hash[0..32].*;
+    const prev: spv.Hash = prev_hash[0..32].*;
+
+    const internal_header = spv.BlockHeader{
+        .version = header.version,
+        .prev_block_hash = header.prev_block_hash,
+        .merkle_root = header.merkle_root,
+        .timestamp = header.timestamp,
+        .bits = header.bits,
+        .nonce = header.nonce,
+    };
+
+    // Build proof
+    var proof_hashes: [MAX_MERKLE_PROOF_DEPTH]spv.Hash = undefined;
+    for (0..proof.hash_count) |i| {
+        proof_hashes[i] = proof.hashes[i];
+    }
+
+    const merkle_proof = spv.MerkleProof{
+        .hashes = proof_hashes[0..proof.hash_count],
+        .index = proof.index,
+    };
+
+    spv.verifyPayment(tx, merkle_proof, internal_header, prev, check_pow) catch |err| {
+        switch (err) {
+            spv.SpvError.BrokenChain => {
+                setLastError("SPV: broken chain");
+                return @intFromEnum(SpvResult.broken_chain);
+            },
+            spv.SpvError.InvalidMerkleProof => {
+                setLastError("SPV: invalid Merkle proof");
+                return @intFromEnum(SpvResult.invalid_merkle_proof);
+            },
+            spv.SpvError.InsufficientWork => {
+                setLastError("SPV: insufficient proof of work");
+                return @intFromEnum(SpvResult.insufficient_work);
+            },
+            else => {
+                setLastError("SPV: verification failed");
+                return @intFromEnum(SpvResult.invalid_input);
+            },
+        }
+    };
+
+    return @intFromEnum(SpvResult.success);
+}
+
+/// Get size of CBlockHeader struct (for FFI buffer allocation)
+export fn quantum_spv_header_size() usize {
+    return @sizeOf(CBlockHeader);
+}
+
+/// Get size of CMerkleProof struct (for FFI buffer allocation)
+export fn quantum_spv_proof_size() usize {
+    return @sizeOf(CMerkleProof);
+}
