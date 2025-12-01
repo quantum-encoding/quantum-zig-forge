@@ -2586,3 +2586,371 @@ test "dust limit constant" {
 test "sighash all constant" {
     try std.testing.expectEqual(@as(u32, 1), quantum_tx_sighash_all());
 }
+
+// =============================================================================
+// COIN SELECTION FFI
+// =============================================================================
+// C-compatible interface for Bitcoin coin selection algorithms.
+// Implements Branch and Bound (BnB) and Largest-First algorithms.
+// =============================================================================
+
+const coin_select = @import("bitcoin/coin_select.zig");
+
+/// C-compatible UTXO structure for coin selection
+pub const CCoinUtxo = extern struct {
+    /// Value in satoshis
+    value: u64,
+    /// Original index in the UTXO pool (for mapping back)
+    original_index: u32,
+    /// Reserved for alignment
+    _reserved: u32,
+};
+
+/// C-compatible selection parameters
+pub const CSelectionParams = extern struct {
+    /// Target amount to send (in satoshis)
+    target_amount: u64,
+    /// Fee rate in satoshis per virtual byte
+    fee_rate: u64,
+    /// Number of outputs (affects fee calculation)
+    output_count: u32,
+    /// Minimum change amount (below this, add to fee instead)
+    min_change: u64,
+    /// Whether to prefer avoiding change (1 = true, 0 = false)
+    prefer_no_change: u8,
+    /// Reserved for alignment
+    _reserved: [7]u8,
+};
+
+/// C-compatible selection result
+pub const CSelectionResult = extern struct {
+    /// Indices of selected UTXOs from the input array
+    selected_indices: [256]u32,
+    /// Number of selected UTXOs
+    selected_count: u32,
+    /// Total value of selected UTXOs
+    total_value: u64,
+    /// Expected change amount (0 if exact match)
+    change_amount: u64,
+    /// Whether this was an exact match (no change needed)
+    is_exact_match: u8,
+    /// Algorithm used: 0=BnB, 1=largest_first, 2=smallest_first
+    algorithm_used: u8,
+    /// Reserved for alignment
+    _reserved: [6]u8,
+};
+
+/// Coin selection result codes
+pub const CoinSelectResult = enum(c_int) {
+    success = 0,
+    insufficient_funds = -1,
+    no_utxos_available = -2,
+    target_below_dust = -3,
+    too_many_utxos = -4,
+    selection_failed = -5,
+    null_pointer = -6,
+};
+
+/// Select UTXOs to fund a transaction
+///
+/// Uses Branch and Bound as primary algorithm, falls back to Largest-First.
+///
+/// Parameters:
+/// - utxos: Array of CCoinUtxo structures
+/// - utxo_count: Number of UTXOs in array
+/// - params: Selection parameters
+/// - result: Output selection result
+///
+/// Returns: 0 on success, negative error code on failure
+export fn quantum_coin_select(
+    utxos: [*c]const CCoinUtxo,
+    utxo_count: usize,
+    params: *const CSelectionParams,
+    result: *CSelectionResult,
+) c_int {
+    if (@intFromPtr(utxos) == 0 and utxo_count > 0) {
+        setLastError("Coin select: null UTXOs pointer");
+        return @intFromEnum(CoinSelectResult.null_pointer);
+    }
+    if (@intFromPtr(params) == 0 or @intFromPtr(result) == 0) {
+        setLastError("Coin select: null params or result pointer");
+        return @intFromEnum(CoinSelectResult.null_pointer);
+    }
+
+    if (utxo_count == 0) {
+        setLastError("Coin select: no UTXOs available");
+        return @intFromEnum(CoinSelectResult.no_utxos_available);
+    }
+
+    if (utxo_count > coin_select.SelectionResult.MAX_SELECTION) {
+        setLastError("Coin select: too many UTXOs");
+        return @intFromEnum(CoinSelectResult.too_many_utxos);
+    }
+
+    // Convert C UTXOs to internal format
+    var internal_utxos: [256]coin_select.CoinUtxo = undefined;
+    for (0..utxo_count) |i| {
+        internal_utxos[i] = coin_select.CoinUtxo.p2wpkh(
+            utxos[i].value,
+            utxos[i].original_index,
+        );
+    }
+
+    // Convert C params to internal format
+    const internal_params = coin_select.SelectionParams{
+        .target_amount = params.target_amount,
+        .fee_rate = params.fee_rate,
+        .output_count = params.output_count,
+        .min_change = params.min_change,
+        .prefer_no_change = params.prefer_no_change != 0,
+    };
+
+    // Perform selection
+    var internal_result: coin_select.SelectionResult = undefined;
+    coin_select.selectCoins(internal_utxos[0..utxo_count], internal_params, &internal_result) catch |err| {
+        return switch (err) {
+            error.InsufficientFunds => @intFromEnum(CoinSelectResult.insufficient_funds),
+            error.NoUtxosAvailable => @intFromEnum(CoinSelectResult.no_utxos_available),
+            error.TargetBelowDust => @intFromEnum(CoinSelectResult.target_below_dust),
+            error.TooManyUtxos => @intFromEnum(CoinSelectResult.too_many_utxos),
+            error.SelectionFailed => @intFromEnum(CoinSelectResult.selection_failed),
+        };
+    };
+
+    // Convert result to C format
+    result.selected_count = @intCast(internal_result.selected_count);
+    for (0..internal_result.selected_count) |i| {
+        result.selected_indices[i] = @intCast(internal_result.selected_indices[i]);
+    }
+    result.total_value = internal_result.total_value;
+    result.change_amount = internal_result.change_amount;
+    result.is_exact_match = if (internal_result.is_exact_match) 1 else 0;
+    result.algorithm_used = @intFromEnum(internal_result.algorithm_used);
+
+    return @intFromEnum(CoinSelectResult.success);
+}
+
+/// Select UTXOs using Largest-First algorithm only
+///
+/// Simple greedy algorithm that always succeeds if funds are sufficient.
+export fn quantum_coin_select_largest_first(
+    utxos: [*c]const CCoinUtxo,
+    utxo_count: usize,
+    params: *const CSelectionParams,
+    result: *CSelectionResult,
+) c_int {
+    if (@intFromPtr(utxos) == 0 and utxo_count > 0) {
+        return @intFromEnum(CoinSelectResult.null_pointer);
+    }
+    if (@intFromPtr(params) == 0 or @intFromPtr(result) == 0) {
+        return @intFromEnum(CoinSelectResult.null_pointer);
+    }
+    if (utxo_count == 0) {
+        return @intFromEnum(CoinSelectResult.no_utxos_available);
+    }
+
+    var internal_utxos: [256]coin_select.CoinUtxo = undefined;
+    for (0..utxo_count) |i| {
+        internal_utxos[i] = coin_select.CoinUtxo.p2wpkh(utxos[i].value, utxos[i].original_index);
+    }
+
+    const internal_params = coin_select.SelectionParams{
+        .target_amount = params.target_amount,
+        .fee_rate = params.fee_rate,
+        .output_count = params.output_count,
+        .min_change = params.min_change,
+        .prefer_no_change = params.prefer_no_change != 0,
+    };
+
+    var internal_result: coin_select.SelectionResult = undefined;
+    coin_select.largestFirst(internal_utxos[0..utxo_count], internal_params, &internal_result) catch |err| {
+        return switch (err) {
+            error.InsufficientFunds => @intFromEnum(CoinSelectResult.insufficient_funds),
+            error.NoUtxosAvailable => @intFromEnum(CoinSelectResult.no_utxos_available),
+            error.TargetBelowDust => @intFromEnum(CoinSelectResult.target_below_dust),
+            error.TooManyUtxos => @intFromEnum(CoinSelectResult.too_many_utxos),
+            error.SelectionFailed => @intFromEnum(CoinSelectResult.selection_failed),
+        };
+    };
+
+    result.selected_count = @intCast(internal_result.selected_count);
+    for (0..internal_result.selected_count) |i| {
+        result.selected_indices[i] = @intCast(internal_result.selected_indices[i]);
+    }
+    result.total_value = internal_result.total_value;
+    result.change_amount = internal_result.change_amount;
+    result.is_exact_match = if (internal_result.is_exact_match) 1 else 0;
+    result.algorithm_used = @intFromEnum(internal_result.algorithm_used);
+
+    return @intFromEnum(CoinSelectResult.success);
+}
+
+/// Select UTXOs using Smallest-First algorithm
+///
+/// Good for consolidating dust UTXOs, but creates larger transactions.
+export fn quantum_coin_select_smallest_first(
+    utxos: [*c]const CCoinUtxo,
+    utxo_count: usize,
+    params: *const CSelectionParams,
+    result: *CSelectionResult,
+) c_int {
+    if (@intFromPtr(utxos) == 0 and utxo_count > 0) {
+        return @intFromEnum(CoinSelectResult.null_pointer);
+    }
+    if (@intFromPtr(params) == 0 or @intFromPtr(result) == 0) {
+        return @intFromEnum(CoinSelectResult.null_pointer);
+    }
+    if (utxo_count == 0) {
+        return @intFromEnum(CoinSelectResult.no_utxos_available);
+    }
+
+    var internal_utxos: [256]coin_select.CoinUtxo = undefined;
+    for (0..utxo_count) |i| {
+        internal_utxos[i] = coin_select.CoinUtxo.p2wpkh(utxos[i].value, utxos[i].original_index);
+    }
+
+    const internal_params = coin_select.SelectionParams{
+        .target_amount = params.target_amount,
+        .fee_rate = params.fee_rate,
+        .output_count = params.output_count,
+        .min_change = params.min_change,
+        .prefer_no_change = params.prefer_no_change != 0,
+    };
+
+    var internal_result: coin_select.SelectionResult = undefined;
+    coin_select.smallestFirst(internal_utxos[0..utxo_count], internal_params, &internal_result) catch |err| {
+        return switch (err) {
+            error.InsufficientFunds => @intFromEnum(CoinSelectResult.insufficient_funds),
+            error.NoUtxosAvailable => @intFromEnum(CoinSelectResult.no_utxos_available),
+            error.TargetBelowDust => @intFromEnum(CoinSelectResult.target_below_dust),
+            error.TooManyUtxos => @intFromEnum(CoinSelectResult.too_many_utxos),
+            error.SelectionFailed => @intFromEnum(CoinSelectResult.selection_failed),
+        };
+    };
+
+    result.selected_count = @intCast(internal_result.selected_count);
+    for (0..internal_result.selected_count) |i| {
+        result.selected_indices[i] = @intCast(internal_result.selected_indices[i]);
+    }
+    result.total_value = internal_result.total_value;
+    result.change_amount = internal_result.change_amount;
+    result.is_exact_match = if (internal_result.is_exact_match) 1 else 0;
+    result.algorithm_used = @intFromEnum(internal_result.algorithm_used);
+
+    return @intFromEnum(CoinSelectResult.success);
+}
+
+/// Calculate transaction fee in satoshis
+export fn quantum_calculate_fee(
+    input_count: usize,
+    output_count: usize,
+    fee_rate: u64,
+) u64 {
+    return coin_select.calculateFee(input_count, output_count, fee_rate);
+}
+
+/// Estimate transaction virtual size in vbytes
+export fn quantum_estimate_tx_vsize(
+    input_count: usize,
+    output_count: usize,
+) u64 {
+    return coin_select.estimateVsize(input_count, output_count);
+}
+
+/// Calculate effective value of a UTXO at given fee rate
+/// Returns value minus cost to spend it (can be negative)
+export fn quantum_effective_value(
+    utxo_value: u64,
+    fee_rate: u64,
+) i64 {
+    const utxo = coin_select.CoinUtxo.p2wpkh(utxo_value, 0);
+    return coin_select.effectiveValue(utxo, fee_rate);
+}
+
+/// Get P2WPKH input virtual size constant
+export fn quantum_input_vsize_p2wpkh() usize {
+    return coin_select.INPUT_VSIZE_P2WPKH;
+}
+
+/// Get P2WPKH output size constant
+export fn quantum_output_vsize_p2wpkh() usize {
+    return coin_select.OUTPUT_VSIZE_P2WPKH;
+}
+
+/// Get size of CCoinUtxo struct (for FFI verification)
+export fn quantum_coin_utxo_size() usize {
+    return @sizeOf(CCoinUtxo);
+}
+
+/// Get size of CSelectionParams struct (for FFI verification)
+export fn quantum_selection_params_size() usize {
+    return @sizeOf(CSelectionParams);
+}
+
+/// Get size of CSelectionResult struct (for FFI verification)
+export fn quantum_selection_result_size() usize {
+    return @sizeOf(CSelectionResult);
+}
+
+// =============================================================================
+// Coin Selection FFI Tests
+// =============================================================================
+
+test "coin select FFI basic" {
+    const utxos = [_]CCoinUtxo{
+        CCoinUtxo{ .value = 100000, .original_index = 0, ._reserved = 0 },
+        CCoinUtxo{ .value = 50000, .original_index = 1, ._reserved = 0 },
+        CCoinUtxo{ .value = 75000, .original_index = 2, ._reserved = 0 },
+    };
+
+    const params = CSelectionParams{
+        .target_amount = 80000,
+        .fee_rate = 5,
+        .output_count = 1,
+        .min_change = 546,
+        .prefer_no_change = 1,
+        ._reserved = [_]u8{0} ** 7,
+    };
+
+    var result: CSelectionResult = undefined;
+    const ret = quantum_coin_select(&utxos, 3, &params, &result);
+
+    try std.testing.expectEqual(@as(c_int, 0), ret);
+    try std.testing.expect(result.selected_count > 0);
+    try std.testing.expect(result.total_value >= 80000);
+}
+
+test "coin select insufficient funds" {
+    const utxos = [_]CCoinUtxo{
+        CCoinUtxo{ .value = 10000, .original_index = 0, ._reserved = 0 },
+    };
+
+    const params = CSelectionParams{
+        .target_amount = 100000,
+        .fee_rate = 5,
+        .output_count = 1,
+        .min_change = 546,
+        .prefer_no_change = 1,
+        ._reserved = [_]u8{0} ** 7,
+    };
+
+    var result: CSelectionResult = undefined;
+    const ret = quantum_coin_select(&utxos, 1, &params, &result);
+
+    try std.testing.expectEqual(@intFromEnum(CoinSelectResult.insufficient_funds), ret);
+}
+
+test "calculate fee FFI" {
+    // 1 input, 2 outputs at 10 sat/vb
+    // vsize = 11 + 68 + 62 = 141
+    const fee = quantum_calculate_fee(1, 2, 10);
+    try std.testing.expectEqual(@as(u64, 1410), fee);
+}
+
+test "effective value FFI" {
+    // 10000 sat UTXO at 10 sat/vb
+    // Cost to spend: 68 * 10 = 680
+    // Effective: 10000 - 680 = 9320
+    const eff = quantum_effective_value(10000, 10);
+    try std.testing.expectEqual(@as(i64, 9320), eff);
+}
