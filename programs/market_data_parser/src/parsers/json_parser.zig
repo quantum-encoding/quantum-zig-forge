@@ -203,8 +203,9 @@ pub const Parser = struct {
     }
     /// Find value for key (zero-copy)
     /// Returns slice pointing into original buffer
+    /// Note: Always searches from beginning of buffer for idempotent behavior
     pub fn findValue(self: *Parser, key: []const u8) ?[]const u8 {
-        var i = self.pos;
+        var i: usize = 0;  // Always start from beginning
         const len = self.buffer.len;
         while (i < len) {
             // Find opening quote of a key
