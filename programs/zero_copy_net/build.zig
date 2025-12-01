@@ -11,11 +11,16 @@ pub fn build(b: *std.Build) void {
     });
 
     // Static library (FFI)
-    const lib = b.addStaticLibrary(.{
-        .name = "zero_copy_net",
+    const lib_module = b.createModule(.{
         .root_source_file = b.path("src/ffi.zig"),
         .target = target,
         .optimize = optimize,
+    });
+
+    const lib = b.addLibrary(.{
+        .linkage = .static,
+        .name = "zero_copy_net",
+        .root_module = lib_module,
     });
     lib.linkLibC();
     lib.installHeader(b.path("include/zero_copy_net.h"), "zero_copy_net.h");
