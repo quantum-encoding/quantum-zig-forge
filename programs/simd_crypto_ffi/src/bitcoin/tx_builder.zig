@@ -720,7 +720,7 @@ pub fn signTransaction(
         const der_len = try signatureToDer(&sig_compact, &der_sig);
 
         // Add sighash type byte
-        signed_inputs[i].signature[0..der_len].* = der_sig[0..der_len].*;
+        @memcpy(signed_inputs[i].signature[0..der_len], der_sig[0..der_len]);
         signed_inputs[i].signature[der_len] = @intCast(SIGHASH_ALL);
         signed_inputs[i].sig_len = der_len + 1;
 
