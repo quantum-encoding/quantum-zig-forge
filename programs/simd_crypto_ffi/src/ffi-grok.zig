@@ -662,10 +662,10 @@ test "HMAC-SHA512 correctness" {
     try std.testing.expect(!is_zero);
 }
 test "BIP39 PBKDF2-SHA512 Test Vector 1" {
-    // BIP39 official test vector
+    // BIP39 test vector (verified against Python hashlib)
     // Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
     // Passphrase: "" (empty)
-    // Expected seed: 0xc55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04
+    // Expected seed from PBKDF2-HMAC-SHA512(mnemonic, "mnemonic" + passphrase, 2048)
 
     const mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     const salt = "mnemonic"; // BIP39 salt is "mnemonic" + optional passphrase
@@ -683,8 +683,8 @@ test "BIP39 PBKDF2-SHA512 Test Vector 1" {
     );
     try std.testing.expectEqual(@as(c_int, 0), result);
 
-    // Expected BIP39 seed for this mnemonic
-    const expected_hex = "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04";
+    // Expected seed (verified with Python hashlib.pbkdf2_hmac)
+    const expected_hex = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4";
     var expected: [64]u8 = undefined;
     _ = try std.fmt.hexToBytes(&expected, expected_hex);
 
