@@ -9,7 +9,34 @@ pub fn build(b: *std.Build) void {
     //     .target = target,
     //     .optimize = optimize,
     // });
-    
+
+    // ========================================================================
+    // FFI Static Library
+    // ========================================================================
+
+    const ffi_lib = b.addLibrary(.{
+        .name = "financial_engine",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ffi.zig"),
+            .target = target,
+            .optimize = optimize,
+            .linkage = .static,
+        }),
+    });
+
+    ffi_lib.linkLibC();
+    ffi_lib.linkSystemLibrary("zmq");
+
+    // Install the static library
+    b.installArtifact(ffi_lib);
+
+    // Install C header
+    const install_header = b.addInstallHeaderFile(
+        b.path("include/financial_engine.h"),
+        "financial_engine.h"
+    );
+    b.getInstallStep().dependOn(&install_header.step);
+
     // Main executable
     const exe = b.addExecutable(.{
         .name = "zig-financial-engine",
