@@ -46,6 +46,19 @@ pub const LFQ_Stats = extern struct {
     is_full: bool,
 };
 
+/// Message buffer (internal structure)
+const Message = struct {
+    data: []u8,
+    len: usize,
+};
+
+/// Queue context (holds queue + buffer pool)
+const QueueContext = struct {
+    queue: spsc.SpscQueue(Message),
+    buffer_size: usize,
+    allocator: std.mem.Allocator,
+};
+
 // ============================================================================
 // SPSC Queue (Byte Buffer)
 // ============================================================================
@@ -79,32 +92,18 @@ export fn lfq_spsc_create(capacity: usize, buffer_size: usize) ?*LFQ_SpscQueue {
 
     const allocator = std.heap.c_allocator;
 
-    // Each queue entry is a buffer
-    const BufferQueue = spsc.SpscQueue([]u8);
-    const queue = allocator.create(BufferQueue) catch return null;
+    const ctx = allocator.create(QueueContext) catch return null;
 
-    queue.* = BufferQueue.init(allocator, capacity) catch {
-        allocator.destroy(queue);
-        return null;
+    ctx.* = .{
+        .queue = spsc.SpscQueue(Message).init(allocator, capacity) catch {
+            allocator.destroy(ctx);
+            return null;
+        },
+        .buffer_size = buffer_size,
+        .allocator = allocator,
     };
 
-    // Pre-allocate all buffers
-    var i: usize = 0;
-    while (i < capacity) : (i += 1) {
-        const buf = allocator.alloc(u8, buffer_size) catch {
-            // Cleanup on failure
-            var j: usize = 0;
-            while (j < i) : (j += 1) {
-                if (queue.tryPop()) |b| allocator.free(b);
-            }
-            queue.deinit();
-            allocator.destroy(queue);
-            return null;
-        };
-        queue.push(buf) catch unreachable; // Can't fail - we know capacity
-    }
-
-    return @ptrCast(queue);
+    return @ptrCast(ctx);
 }
 
 /// Destroy SPSC queue and free resources
@@ -113,16 +112,15 @@ export fn lfq_spsc_create(capacity: usize, buffer_size: usize) ?*LFQ_SpscQueue {
 ///   queue - Queue handle (NULL is safe, will be no-op)
 export fn lfq_spsc_destroy(queue: ?*LFQ_SpscQueue) void {
     if (queue) |q| {
-        const ctx: *spsc.SpscQueue([]u8) = @ptrCast(@alignCast(q));
-        const allocator = ctx.allocator;
+        const ctx: *QueueContext = @ptrCast(@alignCast(q));
 
-        // Free all buffers
-        while (ctx.tryPop()) |buf| {
-            allocator.free(buf);
+        // Free any remaining messages
+        while (ctx.queue.tryPop()) |msg| {
+            ctx.allocator.free(msg.data);
         }
 
-        ctx.deinit();
-        allocator.destroy(ctx);
+        ctx.queue.deinit();
+        ctx.allocator.destroy(ctx);
     }
 }
 
@@ -153,26 +151,24 @@ export fn lfq_spsc_push(
     data: [*]const u8,
     len: usize,
 ) LFQ_Error {
-    const ctx: *spsc.SpscQueue([]u8) = @ptrCast(@alignCast(queue orelse return .INVALID_HANDLE));
+    const ctx: *QueueContext = @ptrCast(@alignCast(queue orelse return .INVALID_HANDLE));
 
-    if (len == 0) return .INVALID_PARAM;
+    if (len == 0 or len > ctx.buffer_size) return .INVALID_PARAM;
 
-    // Get a buffer from the queue
-    const buf = ctx.pop() catch return .QUEUE_FULL;
+    // Allocate buffer for message
+    const buf = ctx.allocator.alloc(u8, len) catch return .OUT_OF_MEMORY;
+    @memcpy(buf, data[0..len]);
 
-    // Check buffer size
-    if (len > buf.len) {
-        // Return buffer to queue
-        ctx.push(buf) catch unreachable;
-        return .INVALID_PARAM;
-    }
+    const msg = Message{
+        .data = buf,
+        .len = len,
+    };
 
-    // Copy data
-    @memcpy(buf[0..len], data[0..len]);
-
-    // Push back with length encoded in first sizeof(usize) bytes
-    // (We'll use the actual buffer, caller gets copy in pop)
-    ctx.push(buf) catch unreachable;
+    ctx.queue.push(msg) catch {
+        // Queue full - free the buffer
+        ctx.allocator.free(buf);
+        return .QUEUE_FULL;
+    };
 
     return .SUCCESS;
 }
@@ -208,17 +204,17 @@ export fn lfq_spsc_pop(
     len: usize,
     size_out: *usize,
 ) LFQ_Error {
-    const ctx: *spsc.SpscQueue([]u8) = @ptrCast(@alignCast(queue orelse return .INVALID_HANDLE));
+    const ctx: *QueueContext = @ptrCast(@alignCast(queue orelse return .INVALID_HANDLE));
 
-    const buf = ctx.pop() catch return .QUEUE_EMPTY;
+    const msg = ctx.queue.pop() catch return .QUEUE_EMPTY;
 
     // Copy data to output
-    const copy_len = @min(buf.len, len);
-    @memcpy(data_out[0..copy_len], buf[0..copy_len]);
-    size_out.* = buf.len;
+    const copy_len = @min(msg.len, len);
+    @memcpy(data_out[0..copy_len], msg.data[0..copy_len]);
+    size_out.* = msg.len;
 
-    // Return buffer to pool
-    ctx.push(buf) catch unreachable;
+    // Free the message buffer
+    ctx.allocator.free(msg.data);
 
     return .SUCCESS;
 }
@@ -235,13 +231,13 @@ export fn lfq_spsc_stats(
     queue: ?*const LFQ_SpscQueue,
     stats_out: *LFQ_Stats,
 ) LFQ_Error {
-    const ctx: *const spsc.SpscQueue([]u8) = @ptrCast(@alignCast(queue orelse return .INVALID_HANDLE));
+    const ctx: *const QueueContext = @ptrCast(@alignCast(queue orelse return .INVALID_HANDLE));
 
     stats_out.* = .{
-        .capacity = ctx.capacity,
-        .length = ctx.len(),
-        .is_empty = ctx.isEmpty(),
-        .is_full = ctx.isFull(),
+        .capacity = ctx.queue.capacity,
+        .length = ctx.queue.len(),
+        .is_empty = ctx.queue.isEmpty(),
+        .is_full = ctx.queue.isFull(),
     };
 
     return .SUCCESS;
@@ -249,20 +245,20 @@ export fn lfq_spsc_stats(
 
 /// Check if queue is empty (non-blocking)
 export fn lfq_spsc_is_empty(queue: ?*const LFQ_SpscQueue) bool {
-    const ctx: *const spsc.SpscQueue([]u8) = @ptrCast(@alignCast(queue orelse return true));
-    return ctx.isEmpty();
+    const ctx: *const QueueContext = @ptrCast(@alignCast(queue orelse return true));
+    return ctx.queue.isEmpty();
 }
 
 /// Check if queue is full (non-blocking)
 export fn lfq_spsc_is_full(queue: ?*const LFQ_SpscQueue) bool {
-    const ctx: *const spsc.SpscQueue([]u8) = @ptrCast(@alignCast(queue orelse return true));
-    return ctx.isFull();
+    const ctx: *const QueueContext = @ptrCast(@alignCast(queue orelse return true));
+    return ctx.queue.isFull();
 }
 
 /// Get current queue length
 export fn lfq_spsc_len(queue: ?*const LFQ_SpscQueue) usize {
-    const ctx: *const spsc.SpscQueue([]u8) = @ptrCast(@alignCast(queue orelse return 0));
-    return ctx.len();
+    const ctx: *const QueueContext = @ptrCast(@alignCast(queue orelse return 0));
+    return ctx.queue.len();
 }
 
 // ============================================================================
