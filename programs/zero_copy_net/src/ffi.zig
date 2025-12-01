@@ -51,9 +51,9 @@ pub const ZCN_Error = enum(c_int) {
 };
 
 /// Callback function types
-pub const ZCN_OnAccept = ?*const fn (user_data: ?*anyopaque, fd: c_int) callconv(.C) void;
-pub const ZCN_OnData = ?*const fn (user_data: ?*anyopaque, fd: c_int, data: [*]const u8, len: usize) callconv(.C) void;
-pub const ZCN_OnClose = ?*const fn (user_data: ?*anyopaque, fd: c_int) callconv(.C) void;
+pub const ZCN_OnAccept = ?*const fn (user_data: ?*anyopaque, fd: c_int) callconv(.c) void;
+pub const ZCN_OnData = ?*const fn (user_data: ?*anyopaque, fd: c_int, data: [*]const u8, len: usize) callconv(.c) void;
+pub const ZCN_OnClose = ?*const fn (user_data: ?*anyopaque, fd: c_int) callconv(.c) void;
 
 /// Statistics
 pub const ZCN_Stats = extern struct {
