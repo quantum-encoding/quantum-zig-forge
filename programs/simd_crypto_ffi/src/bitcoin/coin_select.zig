@@ -373,7 +373,7 @@ fn branchAndBound(
 ///
 /// Simple greedy algorithm: select largest UTXOs until target is met.
 /// Always succeeds if sufficient funds are available.
-fn largestFirst(
+pub fn largestFirst(
     utxos: []const CoinUtxo,
     params: SelectionParams,
     result: *SelectionResult,
