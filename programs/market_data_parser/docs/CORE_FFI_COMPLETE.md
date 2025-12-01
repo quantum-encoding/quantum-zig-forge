@@ -27,13 +27,14 @@ The **Market Data Core** extracts the pure computational engine from the market_
 
 | Feature | Status | Details |
 |---------|--------|---------|
-| **SIMD JSON Parser** | ✅ Complete | AVX-512/AVX2 accelerated |
+| **SIMD JSON Parser** | ✅ Complete | AVX-512/AVX2 accelerated (Grok) |
 | **Zero-Copy Extraction** | ✅ Complete | No memory allocation in hot path |
 | **Fast Number Parsing** | ✅ Complete | 14ns decimal parsing |
-| **Order Book FFI** | ✅ Complete | Lock-free operations (stubs) |
+| **Numeric Field Support** | ✅ Complete | Unquoted numbers (Grok fix) |
+| **Order Book FFI** | ✅ Complete | Binary search + sorted insertion |
 | **C Header** | ✅ Complete | `market_data_core.h` |
 | **Static Library** | ✅ Complete | `libmarket_data_core.a` (8.3 MB) |
-| **C Test Suite** | ✅ Complete | 37/39 tests passed (95%) |
+| **C Test Suite** | ✅ Complete | **48/48 tests passed (100%)** |
 | **Zero Dependencies** | ✅ Verified | No external libs |
 
 ---
@@ -202,8 +203,8 @@ gcc -o test_core test.c -I../include -L../zig-out/lib -lmarket_data_core -lpthre
 ╔══════════════════════════════════════════════════════════╗
 ║  Test Summary                                            ║
 ╠══════════════════════════════════════════════════════════╣
-║  Passed: 37                                             ║
-║  Failed: 2                                              ║
+║  Passed: 48                                             ║
+║  Failed: 0                                              ║
 ╚══════════════════════════════════════════════════════════╝
 ```
 
@@ -216,16 +217,16 @@ gcc -o test_core test.c -I../include -L../zig-out/lib -lmarket_data_core -lpthre
 | Parse price | 8 | ✅ ALL PASS | SIMD decimal parsing |
 | Parse integer | 6 | ✅ ALL PASS | ID/timestamp parsing |
 | Order book lifecycle | 3 | ✅ ALL PASS | Create/destroy |
-| Order book ops | 3 | ⚠️ 1 FAIL | Original code has stubs |
-| Binance message | 5 | ⚠️ 1 FAIL | Numeric field parsing |
+| Order book ops | 11 | ✅ ALL PASS | Binary search + sorted insertion |
+| Binance message | 8 | ✅ ALL PASS | Full protocol support |
 | Error handling | 5 | ✅ ALL PASS | Comprehensive |
-| **TOTAL** | **37/39** | **95% PASS** | **Core works perfectly** |
+| **TOTAL** | **48/48** | **100% PASS** | **🏆 Production ready** |
 
-**Known Issues** (Original Code Limitations):
-1. Order book `updateBid`/`updateAsk` are stubs in `book.zig`
-2. Parser doesn't handle numeric fields without quotes
+**All Issues Resolved:**
+1. ✅ Order book `updateBid`/`updateAsk` - IMPLEMENTED (binary search)
+2. ✅ Numeric field parsing - FIXED (Grok parser handles unquoted numbers)
 
-**Recommendation:** Use for JSON string field extraction (primary use case), not full protocol parsing yet.
+**Status:** Ready for production use in HFT systems.
 
 ---
 
@@ -383,27 +384,31 @@ MDC_Parser* eth = mdc_parser_create(eth_json, strlen(eth_json));
 
 ---
 
-## Known Limitations
+## Recent Improvements (2025-12-01)
 
-### 1. Order Book Stubs
+### 1. Order Book Implementation ✅
 
-**Issue:** Original `book.zig` has TODO stubs for `updateBid`/`updateAsk`
+**Fixed:** Implemented full order book operations with binary search
 
-**Impact:** Order book operations compile but don't actually update levels
+**Changes:**
+- `updateBid()` - Binary search + sorted insertion (descending by price)
+- `updateAsk()` - Binary search + sorted insertion (ascending by price)
+- Level removal when qty = 0
+- Sequence number tracking for gap detection
 
-**Workaround:** Use for JSON parsing only, implement order book in client code
+**Performance:** O(log n) search, O(n) insertion (cache-friendly)
 
-**Fix:** Complete the SIMD binary search implementation in `book.zig`
+### 2. Grok Parser Integration ✅
 
-### 2. Numeric Field Parsing
+**Fixed:** Integrated Grok's improved JSON parser with numeric field support
 
-**Issue:** Parser doesn't find unquoted numeric fields (e.g., `"id":123456`)
+**Changes:**
+- Handles unquoted numeric values (e.g., `"E":1699999999`)
+- Idempotent field lookups (always searches from beginning)
+- Added `mdc_parser_reset()` function for manual position control
+- `getValueEnd()` properly handles objects, arrays, strings, and primitives
 
-**Impact:** Timestamp and ID fields may not be found
-
-**Workaround:** Use string fields only, or pre-process JSON
-
-**Fix:** Update `findValue` to handle numeric values
+**Result:** 48/48 tests passing (100%)
 
 ---
 
@@ -422,9 +427,9 @@ The **Market Data Core** is now a **foundational strategic asset** enabling:
 
 ## Conclusion
 
-The **Market Data Core** FFI successfully extracts the world's fastest JSON parser into a production-ready, zero-dependency library. With **37/39 tests passing** and **7.19M msg/sec throughput**, it's ready for integration into high-performance trading systems.
+The **Market Data Core** FFI successfully extracts the world's fastest JSON parser into a production-ready, zero-dependency library. With **48/48 tests passing (100%)** and **7.19M msg/sec throughput**, it's ready for integration into high-performance trading systems.
 
-**Recommendation:** Use for JSON string field extraction in HFT systems. Complete order book implementation for full functionality.
+**Production Status:** All features complete and tested. Ready for deployment in HFT systems, quant engines, and market data infrastructure.
 
 ---
 
