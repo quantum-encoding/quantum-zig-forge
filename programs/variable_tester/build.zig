@@ -53,7 +53,7 @@ pub fn build(b: *std.Build) void {
     });
     worker_module.addImport("protocol", protocol_module);
     worker_module.addImport("variable_tester", vt_module);
-    worker_module.addImport("test_functions", tf_module);
+    worker_module.addImport("test_interface", test_interface_module);
 
     // ==================== Main executable ====================
     const main_module = b.addModule("main", .{
