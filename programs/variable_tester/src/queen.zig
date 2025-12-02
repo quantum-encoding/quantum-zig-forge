@@ -297,7 +297,7 @@ pub const Queen = struct {
         const actual_count: u32 = @intCast(end_idx - start_idx);
 
         // Build dispatch message
-        var payload = std.ArrayList(u8).init(self.allocator);
+        var payload = std.ArrayListUnmanaged(u8){};
         defer payload.deinit();
 
         // Write dispatch header
