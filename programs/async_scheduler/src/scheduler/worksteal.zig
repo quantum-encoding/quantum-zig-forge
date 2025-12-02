@@ -72,7 +72,6 @@ pub const Scheduler = struct {
             .running = std.atomic.Value(bool).init(false),
             .work_cond = std.Thread.Condition{},
             .work_mutex = std.Thread.Mutex{},
-            .pending_tasks = std.atomic.Value(u64).init(0),
         };
     }
     pub fn deinit(self: *Self) void {
