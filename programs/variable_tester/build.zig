@@ -112,6 +112,8 @@ pub fn build(b: *std.Build) void {
     });
     worker_main_module.addImport("worker", worker_module);
     worker_main_module.addImport("protocol", protocol_module);
+    worker_main_module.addImport("variable_tester", vt_module);
+    worker_main_module.addImport("test_functions", tf_module);
 
     const worker_exe = b.addExecutable(.{
         .name = "worker",
