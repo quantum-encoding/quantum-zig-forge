@@ -406,7 +406,7 @@ pub fn main() !void {
 
         // Store result
         const formula_copy = try allocator.dupe(u8, formula);
-        try results.append(.{
+        try results.append(allocator, .{
             .formula = formula_copy,
             .ratio = result.ratio,
             .is_lossless = result.is_lossless,
