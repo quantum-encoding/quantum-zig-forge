@@ -2,14 +2,16 @@
 //!
 //! Usage: queen [options]
 //!   --port <port>     Listen port (default: 7777)
-//!   --tasks <count>   Number of numeric tasks to generate
-//!   --test <name>     Test function: compression, prime, hash
+//!   --start <number>  Starting number for task range (default: 0)
+//!   --end <number>    Ending number for task range (default: 10000)
+//!   --test <name>     Test function: compression, prime, hash, numeric_match
 
 const std = @import("std");
 const posix = std.posix;
 const Queen = @import("queen.zig").Queen;
 const QueenConfig = @import("queen.zig").QueenConfig;
 const protocol = @import("protocol.zig");
+const test_functions = @import("test_functions.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -24,7 +26,9 @@ pub fn main() !void {
 
     // Parse args
     var config = QueenConfig{};
-    var task_count: u64 = 10000;
+    var start_num: u64 = 0;
+    var end_num: u64 = 10000;
+    var is_numeric_match = false;
 
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
@@ -36,9 +40,13 @@ pub fn main() !void {
             if (args.next()) |port_str| {
                 config.port = try std.fmt.parseInt(u16, port_str, 10);
             }
-        } else if (std.mem.eql(u8, arg, "--tasks")) {
-            if (args.next()) |tasks_str| {
-                task_count = try std.fmt.parseInt(u64, tasks_str, 10);
+        } else if (std.mem.eql(u8, arg, "--start")) {
+            if (args.next()) |start_str| {
+                start_num = try std.fmt.parseInt(u64, start_str, 10);
+            }
+        } else if (std.mem.eql(u8, arg, "--end")) {
+            if (args.next()) |end_str| {
+                end_num = try std.fmt.parseInt(u64, end_str, 10);
             }
         } else if (std.mem.eql(u8, arg, "--test")) {
             if (args.next()) |test_name| {
@@ -48,15 +56,25 @@ pub fn main() !void {
                     config.test_fn_id = .prime_number;
                 } else if (std.mem.eql(u8, test_name, "hash")) {
                     config.test_fn_id = .hash_collision;
+                } else if (std.mem.eql(u8, test_name, "numeric_match")) {
+                    config.test_fn_id = .numeric_match;
+                    is_numeric_match = true;
+                } else if (std.mem.eql(u8, test_name, "math")) {
+                    config.test_fn_id = .math_formula;
                 }
             }
         }
     }
 
+    const task_count = end_num - start_num;
+
     std.debug.print("Configuration:\n", .{});
     std.debug.print("  Port: {}\n", .{config.port});
-    std.debug.print("  Tasks: {}\n", .{task_count});
+    std.debug.print("  Range: {} to {} ({} tasks)\n", .{ start_num, end_num, task_count });
     std.debug.print("  Test: {}\n", .{config.test_fn_id});
+    if (is_numeric_match) {
+        std.debug.print("  Secret Number: {} (searching...)\n", .{test_functions.SECRET_NUMBER});
+    }
     std.debug.print("\n", .{});
 
     // Create Queen
@@ -65,7 +83,7 @@ pub fn main() !void {
 
     // Generate tasks
     std.debug.print("Generating {} tasks...\n", .{task_count});
-    try queen.generateNumericTasks(0, task_count);
+    try queen.generateNumericTasks(start_num, end_num);
     std.debug.print("✓ Tasks generated\n", .{});
     std.debug.print("\n", .{});
 
