@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // Import lockfree_queue from sibling project
-    const lockfree_queue_path = b.path("../lockfree_queue/src/lockfree_queue.zig");
+    const lockfree_queue_path = b.path("../lockfree_queue/src/main.zig");
 
     const lockfree_module = b.addModule("lockfree_queue", .{
         .root_source_file = lockfree_queue_path,
