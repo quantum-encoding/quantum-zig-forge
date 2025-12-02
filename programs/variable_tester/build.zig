@@ -250,13 +250,6 @@ pub fn build(b: *std.Build) void {
     // ==================== Test Function Shared Libraries ====================
     // These are dynamically loadable test functions for the distributed swarm
 
-    // Test Interface module (shared types)
-    const test_interface_module = b.addModule("test_interface", .{
-        .root_source_file = b.path("src/test_interface.zig"),
-        .target = target,
-        .optimize = .ReleaseFast,
-    });
-
     // Compression Test Library (.so)
     const libtest_compression_module = b.addModule("libtest_compression", .{
         .root_source_file = b.path("src/libtest_compression.zig"),
