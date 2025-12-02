@@ -183,13 +183,30 @@ pub const Scheduler = struct {
                 self.work_mutex.unlock();
                 break;
             }
-            // Re-check own queue while holding lock (prevents lost wake-ups)
-            if (self.work_queues[worker_id].pop()) |entry| {
-                self.work_mutex.unlock();
-                entry.execute();
-                self.unregisterTask(entry);
-                continue;
+            // Re-check ALL queues while holding lock (prevents lost wake-ups)
+            // spawn() holds this same lock while pushing, so we're guaranteed
+            // to see any work that was pushed before we started waiting
+            var found_locked = false;
+            for (self.work_queues, 0..) |queue, i| {
+                if (i == worker_id) {
+                    if (queue.pop()) |entry| {
+                        self.work_mutex.unlock();
+                        entry.execute();
+                        self.unregisterTask(entry);
+                        found_locked = true;
+                        break;
+                    }
+                } else {
+                    if (queue.steal()) |entry| {
+                        self.work_mutex.unlock();
+                        entry.execute();
+                        self.unregisterTask(entry);
+                        found_locked = true;
+                        break;
+                    }
+                }
             }
+            if (found_locked) continue;
             // Sleep until woken by new work or shutdown signal
             self.work_cond.wait(&self.work_mutex);
             self.work_mutex.unlock();
