@@ -250,7 +250,7 @@ var g_initialized: bool = false;
 
 /// Initialize the test library
 /// config_data contains: [4 bytes input_len][input_data...]
-export fn swarm_test_init(config: [*]const u8, config_len: usize) callconv(.C) bool {
+export fn swarm_test_init(config: [*]const u8, config_len: usize) callconv(.c) bool {
     if (config_len < 4) return false;
 
     const input_len = std.mem.readInt(u32, config[0..4], .little);
