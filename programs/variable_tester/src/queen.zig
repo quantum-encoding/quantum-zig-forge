@@ -123,7 +123,7 @@ pub const Queen = struct {
         for (self.tasks.items) |task| {
             self.allocator.free(task);
         }
-        self.tasks.deinit();
+        self.tasks.deinit(self.allocator);
 
         self.allocator.destroy(self);
     }
