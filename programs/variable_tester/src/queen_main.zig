@@ -131,8 +131,18 @@ pub fn main() !void {
 
     queen.stop();
 
+    // Calculate elapsed time
+    const end_time = (posix.clock_gettime(.MONOTONIC) catch unreachable);
+    const elapsed_secs = @as(f64, @floatFromInt(end_time.sec - start_time.sec)) +
+        @as(f64, @floatFromInt(end_time.nsec - start_time.nsec)) / 1_000_000_000.0;
+
     // Final stats
     const final_stats = queen.getStats();
+    const final_throughput = if (elapsed_secs > 0)
+        @as(f64, @floatFromInt(final_stats.tasks_completed)) / elapsed_secs
+    else
+        0.0;
+
     std.debug.print("\n", .{});
     std.debug.print("╔══════════════════════════════════════════════════════════╗\n", .{});
     std.debug.print("║  Final Statistics                                        ║\n", .{});
@@ -142,6 +152,39 @@ pub fn main() !void {
     std.debug.print("║  Tasks completed: {d:<39}║\n", .{final_stats.tasks_completed});
     std.debug.print("║  Solutions found: {d:<39}║\n", .{final_stats.solutions_found});
     std.debug.print("║  Best score: {d:.4}{s: <40}║\n", .{ final_stats.best_score, "" });
+    std.debug.print("║  Elapsed time: {d:.2} seconds{s: <30}║\n", .{ elapsed_secs, "" });
+    std.debug.print("║  Throughput: {d:.0} tasks/sec{s: <28}║\n", .{ final_throughput, "" });
     std.debug.print("╚══════════════════════════════════════════════════════════╝\n", .{});
+
+    // Verification for numeric_match test
+    if (is_numeric_match) {
+        std.debug.print("\n", .{});
+        std.debug.print("╔══════════════════════════════════════════════════════════╗\n", .{});
+
+        // Check if we found the secret number
+        const secret = test_functions.SECRET_NUMBER;
+        const secret_in_range = (secret >= start_num and secret < end_num);
+        const expected_solutions: u64 = if (secret_in_range) 1 else 0;
+
+        if (final_stats.solutions_found == expected_solutions and
+            final_stats.tasks_completed == final_stats.total_tasks)
+        {
+            std.debug.print("║  ✅ VERIFICATION: SUCCESS                                ║\n", .{});
+            std.debug.print("╠══════════════════════════════════════════════════════════╣\n", .{});
+            if (secret_in_range) {
+                std.debug.print("║  Found secret number {} in range [{}, {})   ║\n", .{ secret, start_num, end_num });
+            } else {
+                std.debug.print("║  Secret {} not in range [{}, {}) - correct 0 found  ║\n", .{ secret, start_num, end_num });
+            }
+            std.debug.print("║  All {} tasks processed successfully{s: <20}║\n", .{ final_stats.total_tasks, "" });
+        } else {
+            std.debug.print("║  ❌ VERIFICATION: FAILURE                                ║\n", .{});
+            std.debug.print("╠══════════════════════════════════════════════════════════╣\n", .{});
+            std.debug.print("║  Expected {} solution(s), found {}{s: <32}║\n", .{ expected_solutions, final_stats.solutions_found, "" });
+            std.debug.print("║  Completed {}/{} tasks{s: <31}║\n", .{ final_stats.tasks_completed, final_stats.total_tasks, "" });
+        }
+        std.debug.print("╚══════════════════════════════════════════════════════════╝\n", .{});
+    }
+
     std.debug.print("\n", .{});
 }
