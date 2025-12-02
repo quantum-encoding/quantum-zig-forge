@@ -341,15 +341,17 @@ pub fn main() !void {
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
 
-        var buf_reader = std.io.bufferedReader(file.reader());
-        var reader = buf_reader.reader();
-
+        const reader = file.reader();
         var line_buf: [65536]u8 = undefined;
-        while (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) |line| {
-            if (line.len > 0) {
-                const task = try allocator.dupe(u8, line);
-                try tasks.append(allocator, task);
-            }
+
+        while (true) {
+            const line = reader.readUntilDelimiterOrEof(&line_buf, '\n') catch break;
+            if (line) |l| {
+                if (l.len > 0) {
+                    const task = try allocator.dupe(u8, l);
+                    try tasks.append(allocator, task);
+                }
+            } else break;
         }
     } else if (range_start != null and range_end != null) {
         // Generate numeric range
