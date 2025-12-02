@@ -189,25 +189,30 @@ pub const Scheduler = struct {
             // Re-check ALL queues while holding lock (prevents lost wake-ups)
             // spawn() holds this same lock while pushing, so we're guaranteed
             // to see any work that was pushed before we started waiting
+            // Retry up to 3 times if we detect non-empty queues (handles steal contention)
+            var retry: usize = 0;
             var found_locked = false;
-            for (self.work_queues, 0..) |queue, i| {
-                if (i == worker_id) {
-                    if (queue.pop()) |entry| {
-                        self.work_mutex.unlock();
-                        entry.execute();
-                        self.unregisterTask(entry);
-                        found_locked = true;
-                        break;
-                    }
-                } else {
-                    if (queue.steal()) |entry| {
-                        self.work_mutex.unlock();
-                        entry.execute();
-                        self.unregisterTask(entry);
-                        found_locked = true;
-                        break;
+            while (retry < 3) : (retry += 1) {
+                for (self.work_queues, 0..) |queue, i| {
+                    if (i == worker_id) {
+                        if (queue.pop()) |entry| {
+                            self.work_mutex.unlock();
+                            entry.execute();
+                            self.unregisterTask(entry);
+                            found_locked = true;
+                            break;
+                        }
+                    } else {
+                        if (queue.steal()) |entry| {
+                            self.work_mutex.unlock();
+                            entry.execute();
+                            self.unregisterTask(entry);
+                            found_locked = true;
+                            break;
+                        }
                     }
                 }
+                if (found_locked) break;
             }
             if (found_locked) continue;
             // Sleep until woken by new work or shutdown signal
