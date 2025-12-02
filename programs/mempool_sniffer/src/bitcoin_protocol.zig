@@ -152,12 +152,21 @@ pub fn sendPong(sockfd: posix.socket_t, nonce: u64) !void {
     std.mem.writeInt(u32, message[offset..][0..4], 8, .little);
     offset += 4;
 
-    // Checksum (simplified - should be double SHA256 of nonce)
-    std.mem.writeInt(u32, message[offset..][0..4], 0, .little);
+    // Build payload first to calculate checksum
+    var payload: [8]u8 = undefined;
+    std.mem.writeInt(u64, payload[0..8], nonce, .little);
+
+    // Checksum: double-SHA256 of nonce payload
+    var hash1: [32]u8 = undefined;
+    var hash2: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(&payload, &hash1, .{});
+    std.crypto.hash.sha2.Sha256.hash(&hash1, &hash2, .{});
+    const checksum = std.mem.readInt(u32, hash2[0..4], .little);
+    std.mem.writeInt(u32, message[offset..][0..4], checksum, .little);
     offset += 4;
 
     // Payload: nonce
-    std.mem.writeInt(u64, message[offset..][0..8], nonce, .little);
+    @memcpy(message[offset..][0..8], &payload);
 
     _ = try posix.send(sockfd, &message, 0);
 }
