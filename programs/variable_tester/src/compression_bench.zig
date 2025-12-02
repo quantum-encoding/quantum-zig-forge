@@ -1356,6 +1356,36 @@ pub fn main() !void {
         (@as(i128, end_time.nsec) - @as(i128, start_time.nsec));
     const elapsed_secs = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
 
+    // Collect successful results and compute stats
+    var results = std.ArrayListUnmanaged(FormulaResult){};
+    defer results.deinit(allocator);
+
+    var successful: usize = 0;
+    var lossless_count: usize = 0;
+    var best_ratio: f64 = 999.0;
+
+    for (work_results) |wr| {
+        if (wr.success) {
+            successful += 1;
+            if (wr.is_lossless) {
+                lossless_count += 1;
+                if (wr.ratio < best_ratio) {
+                    best_ratio = wr.ratio;
+                }
+            }
+
+            try results.append(allocator, .{
+                .formula = wr.formula,
+                .ratio = wr.ratio,
+                .is_lossless = wr.is_lossless,
+                .throughput_mbps = wr.throughput_mbps,
+                .original_size = wr.original_size,
+                .compressed_size = wr.compressed_size,
+                .encode_time_ns = wr.encode_time_ns,
+            });
+        }
+    }
+
     // Sort by compression ratio
     std.mem.sort(FormulaResult, results.items, {}, FormulaResult.lessThan);
 
@@ -1367,6 +1397,9 @@ pub fn main() !void {
     std.debug.print("║  Lossless: {}                                                        \n", .{lossless_count});
     std.debug.print("║  Best Ratio: {d:.4}                                                  \n", .{best_ratio});
     std.debug.print("║  Total Time: {d:.3}s                                                 \n", .{elapsed_secs});
+    std.debug.print("║  Throughput: {d:.1} formulas/sec                                     \n", .{
+        @as(f64, @floatFromInt(formula_count)) / elapsed_secs,
+    });
     std.debug.print("╠══════════════════════════════════════════════════════════════════════╣\n", .{});
     std.debug.print("║  TOP {} RESULTS                                                      \n", .{top_n});
     std.debug.print("╠══════════════════════════════════════════════════════════════════════╣\n", .{});
@@ -1411,8 +1444,4 @@ pub fn main() !void {
     }
 
     std.debug.print("\nResults saved to: {s}/results.csv\n", .{output_dir});
-
-    for (results.items) |r| {
-        allocator.free(r.formula);
-    }
 }
