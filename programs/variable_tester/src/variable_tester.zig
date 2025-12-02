@@ -60,8 +60,8 @@ pub const WorkerContext = struct {
 
     pub fn init(
         id: usize,
-        task_queue: *spsc.Queue(Task),
-        result_queue: *spsc.Queue(Result),
+        task_queue: *spsc.SpscQueue(Task),
+        result_queue: *spsc.SpscQueue(Result),
         test_fn: TestFn,
         allocator: std.mem.Allocator,
         running: *std.atomic.Value(bool),
