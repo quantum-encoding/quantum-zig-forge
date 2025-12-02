@@ -157,8 +157,8 @@ pub const Queen = struct {
     }
 
     /// Generate range of numeric tasks
-    pub fn generateNumericTasks(self: *Queen, start: u64, end: u64) !void {
-        var i = start;
+    pub fn generateNumericTasks(self: *Queen, start_val: u64, end_val: u64) !void {
+        var i = start_val;
         while (i < end) : (i += 1) {
             const task = try std.fmt.allocPrint(self.allocator, "{}", .{i});
             try self.tasks.append(task);
