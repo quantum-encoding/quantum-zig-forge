@@ -52,7 +52,7 @@ pub fn main() !void {
     const actual_threads = num_threads orelse cpu_count;
 
     std.debug.print("Configuration:\n", .{});
-    std.debug.print("  Queen: {}:{}\n", .{ queen_host, queen_port });
+    std.debug.print("  Queen: {s}:{}\n", .{ queen_host, queen_port });
     std.debug.print("  Threads: {} (detected {} cores)\n", .{ actual_threads, cpu_count });
     std.debug.print("\n", .{});
 
