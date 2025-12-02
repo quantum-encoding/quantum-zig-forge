@@ -299,6 +299,7 @@ pub const Worker = struct {
             .prime_number => test_functions.testPrimeNumber,
             .hash_collision => test_functions.testHashCollision,
             .math_formula => test_functions.testMathFormula,
+            .numeric_match => test_functions.testNumericMatch,
             .custom => test_functions.testLosslessCompression, // fallback
         };
     }
