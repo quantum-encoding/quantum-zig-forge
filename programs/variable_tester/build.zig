@@ -126,6 +126,7 @@ pub fn build(b: *std.Build) void {
         .name = "worker",
         .root_module = worker_main_module,
     });
+    worker_exe.linkLibC(); // Required for dlopen/dlsym
     b.installArtifact(worker_exe);
 
     const worker_cmd = b.addRunArtifact(worker_exe);
