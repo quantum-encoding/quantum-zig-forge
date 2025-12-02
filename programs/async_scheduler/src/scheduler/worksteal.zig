@@ -161,6 +161,7 @@ pub const Scheduler = struct {
         while (self.running.load(.acquire)) {
             // Try to pop from own queue
             if (self.work_queues[worker_id].pop()) |entry| {
+                _ = self.pending_tasks.fetchSub(1, .release);
                 entry.execute();
                 self.unregisterTask(entry);
                 continue;
@@ -172,6 +173,7 @@ pub const Scheduler = struct {
                 const victim = random.intRangeAtMost(usize, 0, self.thread_count - 1);
                 if (victim == worker_id) continue;
                 if (self.work_queues[victim].steal()) |entry| {
+                    _ = self.pending_tasks.fetchSub(1, .release);
                     entry.execute();
                     self.unregisterTask(entry);
                     found_work = true;
@@ -180,46 +182,24 @@ pub const Scheduler = struct {
             }
             // If we found work, continue immediately to check for more
             if (found_work) continue;
-            // No work found - sleep on condition variable
-            // CRITICAL: We must hold the lock while checking queues before wait(),
-            // otherwise we can miss wake signals (spawn() broadcasts while we're
-            // between the queue check above and wait() below)
+            // No work found - prepare to sleep
+            // Use pending_tasks counter to know if there's really work
             self.work_mutex.lock();
             // Double-check running flag before sleeping
             if (!self.running.load(.acquire)) {
                 self.work_mutex.unlock();
                 break;
             }
-            // Re-check ALL queues while holding lock (prevents lost wake-ups)
-            // spawn() holds this same lock while pushing, so we're guaranteed
-            // to see any work that was pushed before we started waiting
-            // Retry up to 3 times if we detect non-empty queues (handles steal contention)
-            var retry: usize = 0;
-            var found_locked = false;
-            while (retry < 3) : (retry += 1) {
-                for (self.work_queues, 0..) |queue, i| {
-                    if (i == worker_id) {
-                        if (queue.pop()) |entry| {
-                            self.work_mutex.unlock();
-                            entry.execute();
-                            self.unregisterTask(entry);
-                            found_locked = true;
-                            break;
-                        }
-                    } else {
-                        if (queue.steal()) |entry| {
-                            self.work_mutex.unlock();
-                            entry.execute();
-                            self.unregisterTask(entry);
-                            found_locked = true;
-                            break;
-                        }
-                    }
-                }
-                if (found_locked) break;
+            // If pending_tasks > 0, there's work somewhere - keep trying
+            // This handles the race where spawn() incremented counter but
+            // we didn't see the task in our queue check
+            if (self.pending_tasks.load(.acquire) > 0) {
+                self.work_mutex.unlock();
+                // Small spin before retrying to reduce contention
+                std.atomic.spinLoopHint();
+                continue;
             }
-            if (found_locked) continue;
-            // Sleep until woken by new work or shutdown signal
+            // No pending tasks - safe to sleep
             self.work_cond.wait(&self.work_mutex);
             self.work_mutex.unlock();
         }
