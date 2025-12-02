@@ -152,7 +152,7 @@ pub const Queen = struct {
     /// Add tasks programmatically
     pub fn addTask(self: *Queen, data: []const u8) !void {
         const task = try self.allocator.dupe(u8, data);
-        try self.tasks.append(task);
+        try self.tasks.append(self.allocator, task);
         self.total_tasks = self.tasks.items.len;
     }
 
@@ -161,7 +161,7 @@ pub const Queen = struct {
         var i = start_val;
         while (i < end_val) : (i += 1) {
             const task = try std.fmt.allocPrint(self.allocator, "{}", .{i});
-            try self.tasks.append(task);
+            try self.tasks.append(self.allocator, task);
         }
         self.total_tasks = self.tasks.items.len;
     }
