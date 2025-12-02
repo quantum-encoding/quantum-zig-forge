@@ -151,4 +151,26 @@ pub fn build(b: *std.Build) void {
 
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&bench_cmd.step);
+
+    // ==================== Saturation Benchmark executable ====================
+    const sat_module = b.addModule("saturation_bench", .{
+        .root_source_file = b.path("src/saturation_bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+
+    const sat_exe = b.addExecutable(.{
+        .name = "saturation-bench",
+        .root_module = sat_module,
+    });
+    b.installArtifact(sat_exe);
+
+    const sat_cmd = b.addRunArtifact(sat_exe);
+    sat_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        sat_cmd.addArgs(args);
+    }
+
+    const sat_step = b.step("saturation", "Run saturation benchmark");
+    sat_step.dependOn(&sat_cmd.step);
 }
