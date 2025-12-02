@@ -84,8 +84,15 @@ pub const Worker = struct {
     tasks_succeeded: std.atomic.Value(u64),
     start_time: i64,
 
-    // Local thread pool
+    // Thread pool for parallel processing
     num_threads: usize,
+    task_queue: ?*TaskQueue,
+    pool_running: std.atomic.Value(bool),
+    pool_threads: ?[]std.Thread,
+    pending_tasks: std.atomic.Value(u64),
+
+    // Result reporting mutex (socket is not thread-safe)
+    result_mutex: std.Thread.Mutex,
 
     pub fn init(allocator: std.mem.Allocator, config: WorkerConfig) !*Worker {
         const self = try allocator.create(Worker);
@@ -97,6 +104,11 @@ pub const Worker = struct {
         const worker_id = std.mem.readInt(u64, &random_bytes, .little);
 
         const num_threads = config.num_threads orelse try std.Thread.getCpuCount();
+
+        // Create task queue with large capacity for buffering
+        const queue_capacity: usize = 1024 * 1024; // 1M task buffer
+        const task_queue = try TaskQueue.init(allocator, queue_capacity);
+        errdefer task_queue.deinit(allocator);
 
         self.* = Worker{
             .allocator = allocator,
@@ -110,6 +122,11 @@ pub const Worker = struct {
             .tasks_succeeded = std.atomic.Value(u64).init(0),
             .start_time = 0,
             .num_threads = num_threads,
+            .task_queue = task_queue,
+            .pool_running = std.atomic.Value(bool).init(false),
+            .pool_threads = null,
+            .pending_tasks = std.atomic.Value(u64).init(0),
+            .result_mutex = std.Thread.Mutex{},
         };
 
         return self;
