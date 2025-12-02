@@ -155,7 +155,6 @@ pub const Scheduler = struct {
         while (self.running.load(.acquire)) {
             // Try to pop from own queue
             if (self.work_queues[worker_id].pop()) |entry| {
-                _ = self.pending_tasks.fetchSub(1, .release);
                 entry.execute();
                 self.unregisterTask(entry);
                 continue;
@@ -167,7 +166,6 @@ pub const Scheduler = struct {
                 const victim = random.intRangeAtMost(usize, 0, self.thread_count - 1);
                 if (victim == worker_id) continue;
                 if (self.work_queues[victim].steal()) |entry| {
-                    _ = self.pending_tasks.fetchSub(1, .release);
                     entry.execute();
                     self.unregisterTask(entry);
                     found_work = true;
@@ -176,25 +174,17 @@ pub const Scheduler = struct {
             }
             // If we found work, continue immediately to check for more
             if (found_work) continue;
-            // No work found - prepare to sleep
-            // Use pending_tasks counter to know if there's really work
+            // No work found - wait with timeout to handle race conditions
             self.work_mutex.lock();
             // Double-check running flag before sleeping
             if (!self.running.load(.acquire)) {
                 self.work_mutex.unlock();
                 break;
             }
-            // If pending_tasks > 0, there's work somewhere - keep trying
-            // This handles the race where spawn() incremented counter but
-            // we didn't see the task in our queue check
-            if (self.pending_tasks.load(.acquire) > 0) {
-                self.work_mutex.unlock();
-                // Small spin before retrying to reduce contention
-                std.atomic.spinLoopHint();
-                continue;
-            }
-            // No pending tasks - safe to sleep
-            self.work_cond.wait(&self.work_mutex);
+            // Use timed wait to handle lost wake-ups (5ms timeout)
+            // This is a safety net for the rare case where broadcast()
+            // happens between our queue check and entering wait()
+            self.work_cond.timedWait(&self.work_mutex, 5_000_000) catch {};
             self.work_mutex.unlock();
         }
     }
