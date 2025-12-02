@@ -1,0 +1,326 @@
+//! The Worker - Compute Drone for the Brute-Force Swarm
+//!
+//! Responsibilities:
+//! - Connect to Queen
+//! - Request and execute task chunks
+//! - Report successful results
+//! - Send periodic heartbeats
+
+const std = @import("std");
+const posix = std.posix;
+const protocol = @import("protocol.zig");
+const variable_tester = @import("variable_tester.zig");
+const test_functions = @import("test_functions.zig");
+
+/// Worker configuration
+pub const WorkerConfig = struct {
+    queen_host: []const u8 = "127.0.0.1",
+    queen_port: u16 = protocol.DEFAULT_PORT,
+    num_threads: ?usize = null, // null = auto-detect
+};
+
+/// The Worker drone
+pub const Worker = struct {
+    allocator: std.mem.Allocator,
+    config: WorkerConfig,
+    sockfd: posix.socket_t,
+    worker_id: u64,
+    assigned_id: u64,
+    chunk_size: u32,
+    running: std.atomic.Value(bool),
+
+    // Statistics
+    tasks_processed: std.atomic.Value(u64),
+    tasks_succeeded: std.atomic.Value(u64),
+    start_time: i64,
+
+    // Local thread pool
+    num_threads: usize,
+
+    pub fn init(allocator: std.mem.Allocator, config: WorkerConfig) !*Worker {
+        const self = try allocator.create(Worker);
+        errdefer allocator.destroy(self);
+
+        // Generate random worker ID
+        var random_bytes: [8]u8 = undefined;
+        std.crypto.random.bytes(&random_bytes);
+        const worker_id = std.mem.readInt(u64, &random_bytes, .little);
+
+        const num_threads = config.num_threads orelse try std.Thread.getCpuCount();
+
+        self.* = Worker{
+            .allocator = allocator,
+            .config = config,
+            .sockfd = undefined,
+            .worker_id = worker_id,
+            .assigned_id = 0,
+            .chunk_size = 0,
+            .running = std.atomic.Value(bool).init(false),
+            .tasks_processed = std.atomic.Value(u64).init(0),
+            .tasks_succeeded = std.atomic.Value(u64).init(0),
+            .start_time = 0,
+            .num_threads = num_threads,
+        };
+
+        return self;
+    }
+
+    pub fn deinit(self: *Worker) void {
+        self.stop();
+        self.allocator.destroy(self);
+    }
+
+    /// Connect to Queen
+    pub fn connect(self: *Worker) !void {
+        // Create socket
+        self.sockfd = try posix.socket(posix.AF.INET, posix.SOCK.STREAM, posix.IPPROTO.TCP);
+        errdefer posix.close(self.sockfd);
+
+        // Parse host IP
+        var ip_parts: [4]u8 = undefined;
+        var iter = std.mem.splitScalar(u8, self.config.queen_host, '.');
+        var idx: usize = 0;
+        while (iter.next()) |part| : (idx += 1) {
+            if (idx >= 4) return error.InvalidIPAddress;
+            ip_parts[idx] = try std.fmt.parseInt(u8, part, 10);
+        }
+        if (idx != 4) return error.InvalidIPAddress;
+
+        // Connect
+        var addr: posix.sockaddr.in = undefined;
+        addr.family = posix.AF.INET;
+        addr.port = std.mem.nativeToBig(u16, self.config.queen_port);
+        addr.addr = std.mem.nativeToBig(u32, (@as(u32, ip_parts[0]) << 24) | (@as(u32, ip_parts[1]) << 16) | (@as(u32, ip_parts[2]) << 8) | ip_parts[3]);
+
+        try posix.connect(self.sockfd, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
+
+        std.debug.print("🐝 Connected to Queen at {}:{}\n", .{ self.config.queen_host, self.config.queen_port });
+
+        // Send hello
+        const hello = protocol.WorkerHello.init(@intCast(self.num_threads), self.worker_id);
+        try protocol.Net.sendStruct(self.sockfd, .worker_hello, hello);
+
+        // Receive welcome
+        var buffer: [1024]u8 = undefined;
+        const header = try protocol.Net.recvHeader(self.sockfd, &buffer);
+
+        if (header.msg_type != .queen_welcome) {
+            return error.UnexpectedResponse;
+        }
+
+        const payload = try protocol.Net.recvPayload(self.sockfd, &buffer, header.payload_len);
+        const welcome: *const protocol.QueenWelcome = @ptrCast(@alignCast(payload.ptr));
+
+        self.assigned_id = welcome.assigned_id;
+        self.chunk_size = welcome.chunk_size;
+
+        std.debug.print("🐝 Registered as Worker {} (chunk_size={})\n", .{ self.assigned_id, self.chunk_size });
+    }
+
+    /// Start the worker loop
+    pub fn start(self: *Worker) !void {
+        if (self.running.load(.acquire)) return error.AlreadyRunning;
+        self.running.store(true, .release);
+
+        self.start_time = (posix.clock_gettime(.REALTIME) catch unreachable).sec;
+
+        // Spawn heartbeat thread
+        _ = try std.Thread.spawn(.{}, heartbeatLoop, .{self});
+
+        // Main work loop
+        self.workLoop();
+    }
+
+    /// Stop the worker
+    pub fn stop(self: *Worker) void {
+        if (self.running.load(.acquire)) {
+            self.running.store(false, .release);
+            posix.close(self.sockfd);
+        }
+    }
+
+    /// Main work loop
+    fn workLoop(self: *Worker) void {
+        var buffer: [1024 * 1024]u8 = undefined; // 1MB buffer for task data
+
+        while (self.running.load(.acquire)) {
+            // Request work
+            const request = protocol.WorkRequest.init(
+                self.assigned_id,
+                self.tasks_processed.load(.monotonic),
+                self.chunk_size,
+            );
+
+            protocol.Net.sendStruct(self.sockfd, .request_work, request) catch |err| {
+                std.debug.print("🐝 Failed to request work: {}\n", .{err});
+                break;
+            };
+
+            // Receive response
+            const header = protocol.Net.recvHeader(self.sockfd, &buffer) catch |err| {
+                std.debug.print("🐝 Failed to receive work response: {}\n", .{err});
+                break;
+            };
+
+            switch (header.msg_type) {
+                .dispatch_work => {
+                    const payload = protocol.Net.recvPayload(self.sockfd, &buffer, header.payload_len) catch |err| {
+                        std.debug.print("🐝 Failed to receive work payload: {}\n", .{err});
+                        break;
+                    };
+                    self.processWorkChunk(payload);
+                },
+                .no_work => {
+                    std.debug.print("🐝 No more work available, waiting...\n", .{});
+                    posix.nanosleep(1, 0); // Wait 1 second before retrying
+                },
+                .shutdown => {
+                    std.debug.print("🐝 Received shutdown signal from Queen\n", .{});
+                    break;
+                },
+                else => {
+                    std.debug.print("🐝 Unexpected message type: {}\n", .{header.msg_type});
+                },
+            }
+        }
+
+        std.debug.print("🐝 Worker loop ended\n", .{});
+    }
+
+    /// Process a chunk of work
+    fn processWorkChunk(self: *Worker, payload: []const u8) void {
+        if (payload.len < @sizeOf(protocol.WorkDispatch)) return;
+
+        const dispatch: *const protocol.WorkDispatch = @ptrCast(@alignCast(payload.ptr));
+
+        std.debug.print("🐝 Processing {} tasks starting at {}\n", .{ dispatch.task_count, dispatch.start_task_id });
+
+        // Get test function
+        const test_fn = getTestFunction(@enumFromInt(dispatch.test_fn_id));
+
+        // Parse and execute tasks
+        var offset: usize = @sizeOf(protocol.WorkDispatch);
+        var tasks_done: u32 = 0;
+
+        while (tasks_done < dispatch.task_count and offset < payload.len) : (tasks_done += 1) {
+            if (offset + @sizeOf(protocol.TaskEntry) > payload.len) break;
+
+            const entry: *const protocol.TaskEntry = @ptrCast(@alignCast(payload[offset..].ptr));
+            offset += @sizeOf(protocol.TaskEntry);
+
+            if (offset + entry.data_len > payload.len) break;
+
+            const task_data = payload[offset..][0..entry.data_len];
+            offset += entry.data_len;
+
+            // Create task and execute
+            const task = variable_tester.Task.init(entry.task_id, task_data);
+
+            if (test_fn(&task, self.allocator)) |result| {
+                _ = self.tasks_processed.fetchAdd(1, .monotonic);
+
+                if (result.success) {
+                    _ = self.tasks_succeeded.fetchAdd(1, .monotonic);
+
+                    // Report result to Queen
+                    self.reportResult(entry.task_id, result) catch |err| {
+                        std.debug.print("🐝 Failed to report result: {}\n", .{err});
+                    };
+                }
+
+                // Free result data if allocated
+                if (result.data.len > 0 and result.data.ptr != task_data.ptr) {
+                    self.allocator.free(result.data);
+                }
+            } else |_| {
+                _ = self.tasks_processed.fetchAdd(1, .monotonic);
+            }
+        }
+
+        std.debug.print("🐝 Completed {} tasks\n", .{tasks_done});
+    }
+
+    /// Report a successful result to Queen
+    fn reportResult(self: *Worker, task_id: u64, result: variable_tester.Result) !void {
+        var payload_buf: [4096]u8 = undefined;
+
+        const submit = protocol.ResultSubmit.init(
+            self.assigned_id,
+            task_id,
+            result.success,
+            result.score,
+            @intCast(result.data.len),
+        );
+
+        // Copy header
+        const header_bytes = std.mem.asBytes(&submit);
+        @memcpy(payload_buf[0..header_bytes.len], header_bytes);
+
+        // Copy data
+        @memcpy(payload_buf[header_bytes.len..][0..result.data.len], result.data);
+
+        const total_len = header_bytes.len + result.data.len;
+
+        try protocol.Net.sendMessage(self.sockfd, .submit_result, payload_buf[0..total_len]);
+
+        // Wait for ACK
+        var ack_buf: [64]u8 = undefined;
+        const ack_header = try protocol.Net.recvHeader(self.sockfd, &ack_buf);
+        if (ack_header.msg_type != .ack_result) {
+            return error.UnexpectedResponse;
+        }
+    }
+
+    /// Heartbeat loop
+    fn heartbeatLoop(self: *Worker) void {
+        while (self.running.load(.acquire)) {
+            posix.nanosleep(protocol.HEARTBEAT_INTERVAL_SEC, 0);
+
+            if (!self.running.load(.acquire)) break;
+
+            const now = (posix.clock_gettime(.REALTIME) catch continue).sec;
+            const uptime: u32 = @intCast(now - self.start_time);
+
+            const hb = protocol.Heartbeat.init(
+                self.assigned_id,
+                self.tasks_processed.load(.monotonic),
+                self.tasks_succeeded.load(.monotonic),
+                uptime,
+            );
+
+            protocol.Net.sendStruct(self.sockfd, .heartbeat, hb) catch continue;
+        }
+    }
+
+    /// Get test function by ID
+    fn getTestFunction(id: protocol.TestFnId) variable_tester.TestFn {
+        return switch (id) {
+            .lossless_compression => test_functions.testLosslessCompression,
+            .prime_number => test_functions.testPrimeNumber,
+            .hash_collision => test_functions.testHashCollision,
+            .math_formula => test_functions.testMathFormula,
+            .custom => test_functions.testLosslessCompression, // fallback
+        };
+    }
+
+    /// Get current statistics
+    pub fn getStats(self: *Worker) WorkerStats {
+        const now = (posix.clock_gettime(.REALTIME) catch return WorkerStats{
+            .tasks_processed = 0,
+            .tasks_succeeded = 0,
+            .uptime_secs = 0,
+        }).sec;
+
+        return WorkerStats{
+            .tasks_processed = self.tasks_processed.load(.monotonic),
+            .tasks_succeeded = self.tasks_succeeded.load(.monotonic),
+            .uptime_secs = @intCast(now - self.start_time),
+        };
+    }
+
+    pub const WorkerStats = struct {
+        tasks_processed: u64,
+        tasks_succeeded: u64,
+        uptime_secs: u32,
+    };
+};
