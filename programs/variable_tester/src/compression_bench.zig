@@ -1022,6 +1022,7 @@ fn executeCompression(
             .zero_rle => try ZeroRLE.encode(allocator, current),
             .lz77 => try LZ77.encode(allocator, current),
             .huffman => try Huffman.encode(allocator, current),
+            .arithmetic => try Arithmetic.encode(allocator, current),
         };
 
         // Free previous intermediate buffer
