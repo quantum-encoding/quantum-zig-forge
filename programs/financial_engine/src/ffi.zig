@@ -105,15 +105,17 @@ const EngineContext = struct {
     signal_queue: network.LockFreeQueue(HFT_Signal, 1024),
 
     fn init(config: *const HFT_Config) !*EngineContext {
-        // Create context
+        // Create context - use page allocator for initial allocation
+        // since we need to bootstrap the GPA
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        const allocator = gpa.allocator();
+        const bootstrap_allocator = gpa.allocator();
 
-        const ctx = try allocator.create(EngineContext);
-        errdefer allocator.destroy(ctx);
+        const ctx = try bootstrap_allocator.create(EngineContext);
+        errdefer bootstrap_allocator.destroy(ctx);
 
+        // Copy GPA to heap and get allocator from the HEAP copy
         ctx.gpa = gpa;
-        ctx.allocator = allocator;
+        ctx.allocator = ctx.gpa.allocator();  // Get allocator from ctx.gpa, NOT stack gpa
 
         // Create strategy config with defaults
         // Convert i128 fixed-point values to f64 (value is in millionths)
@@ -144,10 +146,10 @@ const EngineContext = struct {
         };
 
         // Initialize HFT system
-        ctx.hft_system = try allocator.create(hft_system.HFTSystem);
-        errdefer allocator.destroy(ctx.hft_system);
+        ctx.hft_system = try ctx.allocator.create(hft_system.HFTSystem);
+        errdefer ctx.allocator.destroy(ctx.hft_system);
 
-        ctx.hft_system.* = try hft_system.HFTSystem.init(allocator, sys_config);
+        ctx.hft_system.* = try hft_system.HFTSystem.init(ctx.allocator, sys_config);
         errdefer ctx.hft_system.deinit();
 
         // Add default strategy
