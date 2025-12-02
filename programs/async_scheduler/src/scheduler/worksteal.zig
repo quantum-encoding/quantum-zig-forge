@@ -20,6 +20,8 @@ pub const Scheduler = struct {
     // Condition variable for worker sleep/wake
     work_cond: std.Thread.Condition,
     work_mutex: std.Thread.Mutex,
+    // Counter for pending tasks (used as sleep condition)
+    pending_tasks: std.atomic.Value(u64),
     pub const Options = struct {
         thread_count: usize = 8,
         queue_size: usize = 4096,
