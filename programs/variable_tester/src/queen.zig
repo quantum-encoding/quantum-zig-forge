@@ -56,7 +56,7 @@ pub const Queen = struct {
     running: std.atomic.Value(bool),
 
     // Task management
-    tasks: std.ArrayList([]const u8),
+    tasks: std.ArrayListUnmanaged([]const u8),
     next_task_idx: std.atomic.Value(u64),
     total_tasks: u64,
 
