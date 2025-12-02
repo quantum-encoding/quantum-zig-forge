@@ -390,10 +390,17 @@ const LZ77 = struct {
     }
 };
 
-/// Simple Huffman Coding (canonical form)
+/// Canonical Huffman Coding with real bit-packing
 const Huffman = struct {
     const MAX_SYMBOLS = 256;
     const MAX_CODE_LEN = 15;
+
+    const HuffNode = struct {
+        freq: u32,
+        symbol: u16, // 256+ means internal node
+        left: u16,
+        right: u16,
+    };
 
     pub fn encode(allocator: Allocator, input: []const u8) ![]u8 {
         if (input.len == 0) return try allocator.alloc(u8, 0);
@@ -402,30 +409,160 @@ const Huffman = struct {
         var freq: [MAX_SYMBOLS]u32 = [_]u32{0} ** MAX_SYMBOLS;
         for (input) |c| freq[c] += 1;
 
-        // Build code lengths using package-merge or simple method
-        var code_len: [MAX_SYMBOLS]u8 = [_]u8{0} ** MAX_SYMBOLS;
-        var n_symbols: usize = 0;
+        // Count unique symbols
+        var n_symbols: u16 = 0;
+        for (0..MAX_SYMBOLS) |i| {
+            if (freq[i] > 0) n_symbols += 1;
+        }
 
+        // Handle edge case: only one unique symbol
+        if (n_symbols <= 1) {
+            var output = try std.ArrayListUnmanaged(u8).initCapacity(allocator, 266);
+            errdefer output.deinit(allocator);
+
+            // Header: code lengths (all zeros except one symbol = 1 bit)
+            for (0..256) |i| {
+                try output.append(allocator, if (freq[i] > 0) 1 else 0);
+            }
+
+            // Original length
+            try output.append(allocator, @truncate(input.len));
+            try output.append(allocator, @truncate(input.len >> 8));
+            try output.append(allocator, @truncate(input.len >> 16));
+            try output.append(allocator, @truncate(input.len >> 24));
+
+            // Bit count (all zeros for single symbol - just needs length info)
+            const bit_count = input.len;
+            try output.append(allocator, @truncate(bit_count));
+            try output.append(allocator, @truncate(bit_count >> 8));
+            try output.append(allocator, @truncate(bit_count >> 16));
+            try output.append(allocator, @truncate(bit_count >> 24));
+
+            // Packed bits (all 0s for single symbol case)
+            const byte_count = (bit_count + 7) / 8;
+            try output.appendNTimes(allocator, 0, byte_count);
+
+            return output.toOwnedSlice(allocator);
+        }
+
+        // Build Huffman tree using min-heap simulation
+        var nodes: [MAX_SYMBOLS * 2]HuffNode = undefined;
+        var node_count: u16 = 0;
+
+        // Create leaf nodes for symbols with non-zero frequency
         for (0..MAX_SYMBOLS) |i| {
             if (freq[i] > 0) {
-                n_symbols += 1;
-                // Simple heuristic: more frequent = shorter code
-                const f = freq[i];
-                if (f > input.len / 4) {
-                    code_len[i] = 2;
-                } else if (f > input.len / 16) {
-                    code_len[i] = 4;
-                } else if (f > input.len / 64) {
-                    code_len[i] = 6;
-                } else {
-                    code_len[i] = 8;
+                nodes[node_count] = .{
+                    .freq = freq[i],
+                    .symbol = @intCast(i),
+                    .left = 0xFFFF,
+                    .right = 0xFFFF,
+                };
+                node_count += 1;
+            }
+        }
+
+        // Build tree by combining lowest-frequency nodes
+        var active = try allocator.alloc(u16, node_count);
+        defer allocator.free(active);
+        for (0..node_count) |i| active[i] = @intCast(i);
+        var active_count: usize = node_count;
+
+        while (active_count > 1) {
+            // Find two lowest frequency nodes
+            var min1_idx: usize = 0;
+            var min2_idx: usize = 1;
+
+            if (nodes[active[min1_idx]].freq > nodes[active[min2_idx]].freq) {
+                const tmp = min1_idx;
+                min1_idx = min2_idx;
+                min2_idx = tmp;
+            }
+
+            for (2..active_count) |i| {
+                if (nodes[active[i]].freq < nodes[active[min1_idx]].freq) {
+                    min2_idx = min1_idx;
+                    min1_idx = i;
+                } else if (nodes[active[i]].freq < nodes[active[min2_idx]].freq) {
+                    min2_idx = i;
+                }
+            }
+
+            // Create internal node
+            const left_node = active[min1_idx];
+            const right_node = active[min2_idx];
+            nodes[node_count] = .{
+                .freq = nodes[left_node].freq + nodes[right_node].freq,
+                .symbol = 0xFFFF, // Internal node marker
+                .left = left_node,
+                .right = right_node,
+            };
+
+            // Replace min1 with new node, remove min2
+            active[min1_idx] = node_count;
+            active[min2_idx] = active[active_count - 1];
+            active_count -= 1;
+            node_count += 1;
+        }
+
+        const root = active[0];
+
+        // Calculate code lengths via tree traversal
+        var code_len: [MAX_SYMBOLS]u8 = [_]u8{0} ** MAX_SYMBOLS;
+        var stack: [MAX_CODE_LEN * 2]struct { node: u16, depth: u8 } = undefined;
+        var stack_top: usize = 1;
+        stack[0] = .{ .node = root, .depth = 0 };
+
+        while (stack_top > 0) {
+            stack_top -= 1;
+            const item = stack[stack_top];
+            const node = nodes[item.node];
+
+            if (node.symbol < 256) {
+                // Leaf node
+                code_len[node.symbol] = if (item.depth == 0) 1 else item.depth;
+            } else {
+                // Internal node
+                if (node.left != 0xFFFF and item.depth < MAX_CODE_LEN) {
+                    stack[stack_top] = .{ .node = node.left, .depth = item.depth + 1 };
+                    stack_top += 1;
+                }
+                if (node.right != 0xFFFF and item.depth < MAX_CODE_LEN) {
+                    stack[stack_top] = .{ .node = node.right, .depth = item.depth + 1 };
+                    stack_top += 1;
                 }
             }
         }
 
-        // For simplicity, just store code lengths + packed data
-        // Real implementation would use canonical Huffman codes
-        var output = try std.ArrayListUnmanaged(u8).initCapacity(allocator, input.len + 256);
+        // Build canonical codes from lengths
+        // Count code lengths
+        var bl_count: [MAX_CODE_LEN + 1]u16 = [_]u16{0} ** (MAX_CODE_LEN + 1);
+        for (0..MAX_SYMBOLS) |i| {
+            if (code_len[i] > 0) {
+                bl_count[code_len[i]] += 1;
+            }
+        }
+
+        // Calculate starting codes for each length
+        var next_code: [MAX_CODE_LEN + 1]u16 = [_]u16{0} ** (MAX_CODE_LEN + 1);
+        var code: u16 = 0;
+        for (1..MAX_CODE_LEN + 1) |bits| {
+            code = (code + bl_count[bits - 1]) << 1;
+            next_code[bits] = code;
+        }
+
+        // Assign codes
+        var codes: [MAX_SYMBOLS]u16 = [_]u16{0} ** MAX_SYMBOLS;
+        for (0..MAX_SYMBOLS) |i| {
+            const len = code_len[i];
+            if (len > 0) {
+                codes[i] = next_code[len];
+                next_code[len] += 1;
+            }
+        }
+
+        // Encode data with bit-packing
+        var output = try std.ArrayListUnmanaged(u8).initCapacity(allocator, input.len + 268);
         errdefer output.deinit(allocator);
 
         // Header: 256 bytes of code lengths
@@ -433,23 +570,58 @@ const Huffman = struct {
             try output.append(allocator, code_len[i]);
         }
 
-        // Store original length (4 bytes)
+        // Original length (4 bytes)
         try output.append(allocator, @truncate(input.len));
         try output.append(allocator, @truncate(input.len >> 8));
         try output.append(allocator, @truncate(input.len >> 16));
         try output.append(allocator, @truncate(input.len >> 24));
 
-        // For now, just copy data (proper bit-packing would go here)
-        // This is a stub - real Huffman would pack bits
+        // Calculate total bits
+        var total_bits: usize = 0;
         for (input) |c| {
-            try output.append(allocator, c);
+            total_bits += code_len[c];
+        }
+
+        // Bit count (4 bytes)
+        try output.append(allocator, @truncate(total_bits));
+        try output.append(allocator, @truncate(total_bits >> 8));
+        try output.append(allocator, @truncate(total_bits >> 16));
+        try output.append(allocator, @truncate(total_bits >> 24));
+
+        // Pack bits into bytes
+        var bit_buffer: u32 = 0;
+        var bits_in_buffer: u5 = 0;
+
+        for (input) |c| {
+            const sym_code = codes[c];
+            const sym_len = code_len[c];
+
+            // Add code bits to buffer (MSB first)
+            bit_buffer |= @as(u32, sym_code) << (32 - bits_in_buffer - sym_len);
+            bits_in_buffer += @intCast(sym_len);
+
+            // Flush complete bytes
+            while (bits_in_buffer >= 8) {
+                try output.append(allocator, @truncate(bit_buffer >> 24));
+                bit_buffer <<= 8;
+                bits_in_buffer -= 8;
+            }
+        }
+
+        // Flush remaining bits
+        if (bits_in_buffer > 0) {
+            try output.append(allocator, @truncate(bit_buffer >> 24));
         }
 
         return output.toOwnedSlice(allocator);
     }
 
     pub fn decode(allocator: Allocator, input: []const u8) ![]u8 {
-        if (input.len < 260) return try allocator.alloc(u8, 0);
+        if (input.len < 264) return try allocator.alloc(u8, 0);
+
+        // Read code lengths
+        var code_len: [MAX_SYMBOLS]u8 = undefined;
+        @memcpy(&code_len, input[0..256]);
 
         // Read original length
         const orig_len = @as(usize, input[256]) |
@@ -457,9 +629,87 @@ const Huffman = struct {
             (@as(usize, input[258]) << 16) |
             (@as(usize, input[259]) << 24);
 
-        // For stub: just copy back
-        const output = try allocator.alloc(u8, orig_len);
-        @memcpy(output, input[260..][0..orig_len]);
+        // Read bit count
+        const bit_count = @as(usize, input[260]) |
+            (@as(usize, input[261]) << 8) |
+            (@as(usize, input[262]) << 16) |
+            (@as(usize, input[263]) << 24);
+
+        if (orig_len == 0) return try allocator.alloc(u8, 0);
+
+        // Build canonical codes (same as encoder)
+        var bl_count: [MAX_CODE_LEN + 1]u16 = [_]u16{0} ** (MAX_CODE_LEN + 1);
+        for (0..MAX_SYMBOLS) |i| {
+            if (code_len[i] > 0) {
+                bl_count[code_len[i]] += 1;
+            }
+        }
+
+        var next_code: [MAX_CODE_LEN + 1]u16 = [_]u16{0} ** (MAX_CODE_LEN + 1);
+        var code: u16 = 0;
+        for (1..MAX_CODE_LEN + 1) |bits| {
+            code = (code + bl_count[bits - 1]) << 1;
+            next_code[bits] = code;
+        }
+
+        var codes: [MAX_SYMBOLS]u16 = [_]u16{0} ** MAX_SYMBOLS;
+        for (0..MAX_SYMBOLS) |i| {
+            const len = code_len[i];
+            if (len > 0) {
+                codes[i] = next_code[len];
+                next_code[len] += 1;
+            }
+        }
+
+        // Build decode table: for each (length, code) -> symbol
+        // Using simple linear search for correctness (could optimize with tables)
+        var output = try allocator.alloc(u8, orig_len);
+        errdefer allocator.free(output);
+
+        const bit_data = input[264..];
+        var bit_pos: usize = 0;
+        var out_idx: usize = 0;
+
+        while (out_idx < orig_len and bit_pos < bit_count) {
+            // Read bits and find matching symbol
+            var current_code: u16 = 0;
+
+            for (1..MAX_CODE_LEN + 1) |len| {
+                if (bit_pos >= bit_count) break;
+
+                // Read next bit
+                const byte_idx = bit_pos / 8;
+                const bit_idx: u3 = @intCast(7 - (bit_pos % 8));
+
+                if (byte_idx >= bit_data.len) break;
+
+                const bit: u16 = @as(u16, (bit_data[byte_idx] >> bit_idx) & 1);
+                current_code = (current_code << 1) | bit;
+                bit_pos += 1;
+
+                // Check if this code matches any symbol with this length
+                for (0..MAX_SYMBOLS) |sym| {
+                    if (code_len[sym] == len and codes[sym] == current_code) {
+                        output[out_idx] = @intCast(sym);
+                        out_idx += 1;
+                        break;
+                    }
+                }
+
+                // If we found a symbol, break out of length loop
+                if (out_idx > 0 and out_idx == orig_len) break;
+
+                // Check if we just decoded a symbol
+                var found = false;
+                for (0..MAX_SYMBOLS) |sym| {
+                    if (code_len[sym] == len and codes[sym] == current_code) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+        }
 
         return output;
     }
