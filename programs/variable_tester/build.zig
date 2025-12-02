@@ -39,6 +39,26 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the variable tester");
     run_step.dependOn(&run_cmd.step);
 
+    // Variable tester module (for imports)
+    const vt_module = b.addModule("variable_tester", .{
+        .root_source_file = b.path("src/variable_tester.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    vt_module.addImport("lockfree_queue", lockfree_module);
+
+    // Test functions module
+    const tf_module = b.addModule("test_functions", .{
+        .root_source_file = b.path("src/test_functions.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    tf_module.addImport("variable_tester", vt_module);
+
+    // Add imports to main module
+    main_module.addImport("variable_tester", vt_module);
+    main_module.addImport("test_functions", tf_module);
+
     // Benchmark module
     const bench_module = b.addModule("bench", .{
         .root_source_file = b.path("benchmarks/bench.zig"),
@@ -46,6 +66,8 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseFast,
     });
     bench_module.addImport("lockfree_queue", lockfree_module);
+    bench_module.addImport("variable_tester", vt_module);
+    bench_module.addImport("test_functions", tf_module);
 
     // Benchmark executable
     const bench = b.addExecutable(.{
