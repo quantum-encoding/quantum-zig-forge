@@ -763,13 +763,13 @@ const Arithmetic = struct {
         var pending_bits: u32 = 0;
 
         var bit_buffer: u8 = 0;
-        var bits_in_buffer: u3 = 0;
+        var bits_in_buffer: u4 = 0;
 
         const writeBit = struct {
             fn write(
                 bit: u1,
                 buffer: *u8,
-                count: *u3,
+                count: *u4,
                 out: *std.ArrayListUnmanaged(u8),
                 alloc: Allocator,
             ) !void {
