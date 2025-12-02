@@ -162,8 +162,11 @@ const BWT = struct {
         for (0..n) |i| indices[i] = i;
 
         // Sort rotations lexicographically
-        std.mem.sort(usize, indices, .{ .text = text, .n = n }, struct {
-            fn lessThan(ctx: struct { text: []const u8, n: usize }, a: usize, b: usize) bool {
+        const SortCtx = struct {
+            text: []const u8,
+            n: usize,
+
+            pub fn lessThan(ctx: @This(), a: usize, b: usize) bool {
                 for (0..ctx.n) |i| {
                     const ca = ctx.text[(a + i) % ctx.n];
                     const cb = ctx.text[(b + i) % ctx.n];
@@ -171,7 +174,8 @@ const BWT = struct {
                 }
                 return false;
             }
-        }.lessThan);
+        };
+        std.mem.sort(usize, indices, SortCtx{ .text = text, .n = n }, SortCtx.lessThan);
 
         // Output: last column of sorted rotations + position of original
         var output = try allocator.alloc(u8, n + 4); // +4 for storing original position
