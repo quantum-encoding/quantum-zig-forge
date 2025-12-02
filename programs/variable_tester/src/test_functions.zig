@@ -165,3 +165,24 @@ pub fn testMathFormula(task: *const variable_tester.Task, allocator: std.mem.All
 
     return variable_tester.Result.init(task.id, success, task.data, score);
 }
+
+/// Numeric Match Test Function
+/// Exhaustive search benchmark - finds a specific "secret" number
+/// Used to verify swarm can search through millions of possibilities
+pub const SECRET_NUMBER: u64 = 734501;
+
+pub fn testNumericMatch(task: *const variable_tester.Task, allocator: std.mem.Allocator) !variable_tester.Result {
+    _ = allocator;
+
+    // Parse the number from task data
+    const num_str = std.mem.trim(u8, task.data, &std.ascii.whitespace);
+    const num = std.fmt.parseInt(u64, num_str, 10) catch {
+        return variable_tester.Result.init(task.id, false, task.data, 0.0);
+    };
+
+    // Check if this number matches the secret
+    const success = (num == SECRET_NUMBER);
+    const score: f64 = if (success) 1.0 else 0.0;
+
+    return variable_tester.Result.init(task.id, success, task.data, score);
+}
