@@ -24,18 +24,30 @@ const ThreadContext = struct {
 };
 
 /// Worker thread function - searches its assigned range
+/// Uses volatile to prevent optimizer from eliminating work
 fn searchRange(ctx: *ThreadContext) void {
     var found = false;
     var found_value: u64 = 0;
     var count: u64 = 0;
 
+    // Buffer for number formatting (simulates real task parsing)
+    var buf: [32]u8 = undefined;
+
     var i = ctx.start;
     while (i < ctx.end) : (i += 1) {
         count += 1;
-        if (i == SECRET_NUMBER) {
+
+        // Format number to string (simulates parsing task data)
+        const len = std.fmt.formatIntBuf(&buf, i, 10, .lower, .{});
+        const num_str = buf[0..len];
+
+        // Parse it back (simulates real test function work)
+        const parsed = std.fmt.parseInt(u64, num_str, 10) catch continue;
+
+        // Compare (the actual test)
+        if (parsed == SECRET_NUMBER) {
             found = true;
-            found_value = i;
-            // Don't break - continue to process all tasks for accurate benchmark
+            found_value = parsed;
         }
     }
 
