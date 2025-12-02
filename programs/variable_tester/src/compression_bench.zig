@@ -715,6 +715,231 @@ const Huffman = struct {
     }
 };
 
+/// Arithmetic Coding - Near-optimal entropy coding
+/// Uses 32-bit fixed-point arithmetic with rescaling
+const Arithmetic = struct {
+    const PRECISION: u32 = 16; // Bits of precision
+    const WHOLE: u32 = 1 << PRECISION;
+    const HALF: u32 = WHOLE / 2;
+    const QUARTER: u32 = WHOLE / 4;
+
+    pub fn encode(allocator: Allocator, input: []const u8) ![]u8 {
+        if (input.len == 0) return try allocator.alloc(u8, 0);
+
+        // Count frequencies
+        var freq: [256]u32 = [_]u32{0} ** 256;
+        for (input) |c| freq[c] += 1;
+
+        // Build cumulative frequency table
+        var cum_freq: [257]u32 = undefined;
+        cum_freq[0] = 0;
+        for (0..256) |i| {
+            cum_freq[i + 1] = cum_freq[i] + freq[i];
+        }
+        const total = cum_freq[256];
+
+        // Output buffer
+        var output = try std.ArrayListUnmanaged(u8).initCapacity(allocator, input.len + 1024);
+        errdefer output.deinit(allocator);
+
+        // Header: original length (4 bytes)
+        try output.append(allocator, @truncate(input.len));
+        try output.append(allocator, @truncate(input.len >> 8));
+        try output.append(allocator, @truncate(input.len >> 16));
+        try output.append(allocator, @truncate(input.len >> 24));
+
+        // Header: frequency table (256 * 4 bytes for simplicity)
+        for (0..256) |i| {
+            try output.append(allocator, @truncate(freq[i]));
+            try output.append(allocator, @truncate(freq[i] >> 8));
+            try output.append(allocator, @truncate(freq[i] >> 16));
+            try output.append(allocator, @truncate(freq[i] >> 24));
+        }
+
+        // Arithmetic encoding
+        var low: u32 = 0;
+        var high: u32 = WHOLE - 1;
+        var pending_bits: u32 = 0;
+
+        var bit_buffer: u8 = 0;
+        var bits_in_buffer: u3 = 0;
+
+        const writeBit = struct {
+            fn write(
+                bit: u1,
+                buffer: *u8,
+                count: *u3,
+                out: *std.ArrayListUnmanaged(u8),
+                alloc: Allocator,
+            ) !void {
+                buffer.* = (buffer.* << 1) | bit;
+                count.* += 1;
+                if (count.* == 8) {
+                    try out.append(alloc, buffer.*);
+                    buffer.* = 0;
+                    count.* = 0;
+                }
+            }
+        }.write;
+
+        for (input) |sym| {
+            const range = high - low + 1;
+
+            // Update range based on symbol probability
+            high = low + @as(u32, @truncate((@as(u64, range) * cum_freq[sym + 1]) / total)) - 1;
+            low = low + @as(u32, @truncate((@as(u64, range) * cum_freq[sym]) / total));
+
+            // Normalize
+            while (true) {
+                if (high < HALF) {
+                    // Output 0 followed by pending 1s
+                    try writeBit(0, &bit_buffer, &bits_in_buffer, &output, allocator);
+                    while (pending_bits > 0) : (pending_bits -= 1) {
+                        try writeBit(1, &bit_buffer, &bits_in_buffer, &output, allocator);
+                    }
+                } else if (low >= HALF) {
+                    // Output 1 followed by pending 0s
+                    try writeBit(1, &bit_buffer, &bits_in_buffer, &output, allocator);
+                    while (pending_bits > 0) : (pending_bits -= 1) {
+                        try writeBit(0, &bit_buffer, &bits_in_buffer, &output, allocator);
+                    }
+                    low -= HALF;
+                    high -= HALF;
+                } else if (low >= QUARTER and high < 3 * QUARTER) {
+                    // Pending bit
+                    pending_bits += 1;
+                    low -= QUARTER;
+                    high -= QUARTER;
+                } else {
+                    break;
+                }
+
+                low = low * 2;
+                high = high * 2 + 1;
+            }
+        }
+
+        // Flush remaining bits
+        pending_bits += 1;
+        if (low < QUARTER) {
+            try writeBit(0, &bit_buffer, &bits_in_buffer, &output, allocator);
+            while (pending_bits > 0) : (pending_bits -= 1) {
+                try writeBit(1, &bit_buffer, &bits_in_buffer, &output, allocator);
+            }
+        } else {
+            try writeBit(1, &bit_buffer, &bits_in_buffer, &output, allocator);
+            while (pending_bits > 0) : (pending_bits -= 1) {
+                try writeBit(0, &bit_buffer, &bits_in_buffer, &output, allocator);
+            }
+        }
+
+        // Flush final partial byte
+        if (bits_in_buffer > 0) {
+            bit_buffer <<= @intCast(8 - bits_in_buffer);
+            try output.append(allocator, bit_buffer);
+        }
+
+        return output.toOwnedSlice(allocator);
+    }
+
+    pub fn decode(allocator: Allocator, input: []const u8) ![]u8 {
+        if (input.len < 1028) return try allocator.alloc(u8, 0);
+
+        // Read original length
+        const orig_len = @as(usize, input[0]) |
+            (@as(usize, input[1]) << 8) |
+            (@as(usize, input[2]) << 16) |
+            (@as(usize, input[3]) << 24);
+
+        if (orig_len == 0) return try allocator.alloc(u8, 0);
+
+        // Read frequency table
+        var freq: [256]u32 = undefined;
+        for (0..256) |i| {
+            const offset = 4 + i * 4;
+            freq[i] = @as(u32, input[offset]) |
+                (@as(u32, input[offset + 1]) << 8) |
+                (@as(u32, input[offset + 2]) << 16) |
+                (@as(u32, input[offset + 3]) << 24);
+        }
+
+        // Build cumulative frequency table
+        var cum_freq: [257]u32 = undefined;
+        cum_freq[0] = 0;
+        for (0..256) |i| {
+            cum_freq[i + 1] = cum_freq[i] + freq[i];
+        }
+        const total = cum_freq[256];
+
+        if (total == 0) return try allocator.alloc(u8, 0);
+
+        const bit_data = input[1028..];
+        var bit_pos: usize = 0;
+
+        const readBit = struct {
+            fn read(data: []const u8, pos: *usize) u1 {
+                if (pos.* / 8 >= data.len) return 0;
+                const byte_idx = pos.* / 8;
+                const bit_idx: u3 = @intCast(7 - (pos.* % 8));
+                pos.* += 1;
+                return @truncate((data[byte_idx] >> bit_idx) & 1);
+            }
+        }.read;
+
+        // Initialize decoder
+        var low: u32 = 0;
+        var high: u32 = WHOLE - 1;
+        var value: u32 = 0;
+
+        // Read initial bits
+        for (0..PRECISION) |_| {
+            value = (value << 1) | readBit(bit_data, &bit_pos);
+        }
+
+        var output = try allocator.alloc(u8, orig_len);
+        errdefer allocator.free(output);
+
+        for (0..orig_len) |out_idx| {
+            const range = high - low + 1;
+
+            // Find symbol
+            const scaled = @as(u32, @truncate(((@as(u64, value - low) + 1) * total - 1) / range));
+
+            var sym: usize = 0;
+            while (sym < 256 and cum_freq[sym + 1] <= scaled) : (sym += 1) {}
+
+            output[out_idx] = @intCast(sym);
+
+            // Update range
+            high = low + @as(u32, @truncate((@as(u64, range) * cum_freq[sym + 1]) / total)) - 1;
+            low = low + @as(u32, @truncate((@as(u64, range) * cum_freq[sym]) / total));
+
+            // Normalize
+            while (true) {
+                if (high < HALF) {
+                    // Nothing to do
+                } else if (low >= HALF) {
+                    low -= HALF;
+                    high -= HALF;
+                    value -= HALF;
+                } else if (low >= QUARTER and high < 3 * QUARTER) {
+                    low -= QUARTER;
+                    high -= QUARTER;
+                    value -= QUARTER;
+                } else {
+                    break;
+                }
+
+                low = low * 2;
+                high = high * 2 + 1;
+                value = (value << 1) | readBit(bit_data, &bit_pos);
+            }
+        }
+
+        return output;
+    }
+};
+
 // ============================================================================
 // Pipeline Execution
 // ============================================================================
@@ -727,6 +952,7 @@ const CompressionStep = enum {
     zero_rle,
     lz77,
     huffman,
+    arithmetic,
 };
 
 const CompressionResult = struct {
