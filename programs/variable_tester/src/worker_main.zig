@@ -7,8 +7,8 @@
 
 const std = @import("std");
 const posix = std.posix;
-const Worker = @import("worker.zig").Worker;
-const WorkerConfig = @import("worker.zig").WorkerConfig;
+const Worker = @import("worker").Worker;
+const WorkerConfig = @import("worker").WorkerConfig;
 const protocol = @import("protocol");
 
 pub fn main() !void {
