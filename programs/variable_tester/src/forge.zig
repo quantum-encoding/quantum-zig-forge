@@ -348,7 +348,7 @@ pub fn main() !void {
         while (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) |line| {
             if (line.len > 0) {
                 const task = try allocator.dupe(u8, line);
-                try tasks.append(task);
+                try tasks.append(allocator, task);
             }
         }
     } else if (range_start != null and range_end != null) {
