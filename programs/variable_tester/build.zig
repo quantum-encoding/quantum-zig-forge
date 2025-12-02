@@ -273,7 +273,4 @@ pub fn build(b: *std.Build) void {
     swarm_step.dependOn(&queen_exe.step);
     swarm_step.dependOn(&worker_exe.step);
     swarm_step.dependOn(&libtest_compression.step);
-
-    // Export test_interface module for worker
-    _ = test_interface_module;
 }
