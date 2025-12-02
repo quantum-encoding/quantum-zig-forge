@@ -159,12 +159,15 @@ pub const Scheduler = struct {
     fn workerThread(self: *Self, worker_id: usize) void {
         var rng = std.Random.DefaultPrng.init(@intCast(worker_id));
         const random = rng.random();
+        var idle_spins: usize = 0;
+        const max_spins: usize = 100; // Spin briefly before sleeping
 
         while (self.running.load(.acquire)) {
             // Try to pop from own queue
             if (self.work_queues[worker_id].pop()) |entry| {
                 entry.execute();
                 self.unregisterTask(entry);
+                idle_spins = 0; // Reset spin counter
                 continue;
             }
 
@@ -179,6 +182,7 @@ pub const Scheduler = struct {
                     entry.execute();
                     self.unregisterTask(entry);
                     found_work = true;
+                    idle_spins = 0; // Reset spin counter
                     break;
                 }
             }
@@ -186,7 +190,15 @@ pub const Scheduler = struct {
             // If we found work, continue immediately to check for more
             if (found_work) continue;
 
-            // No work found - sleep on condition variable
+            // No work found - spin briefly before sleeping
+            // This improves latency for burst workloads
+            if (idle_spins < max_spins) {
+                idle_spins += 1;
+                std.Thread.yield() catch {};
+                continue;
+            }
+
+            // Still no work after spinning - sleep on condition variable
             // This prevents busy-waiting and allows clean shutdown
             self.work_mutex.lock();
             // Double-check running flag before sleeping
@@ -197,6 +209,7 @@ pub const Scheduler = struct {
             // Sleep until woken by new work or shutdown signal
             self.work_cond.wait(&self.work_mutex);
             self.work_mutex.unlock();
+            idle_spins = 0; // Reset after waking
         }
     }
 

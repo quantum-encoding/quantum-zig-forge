@@ -28,9 +28,10 @@ The **Async Scheduler Core** extracts the work-stealing task scheduler, providin
 | **Work-Stealing Scheduler** | ✅ Complete | Lock-free task queues per worker |
 | **Auto CPU Detection** | ✅ Complete | Automatic thread count |
 | **Task State Tracking** | ✅ Complete | Pending/Running/Completed/Failed |
+| **Proper Shutdown** | ✅ Complete | Condition variable wake-up, no deadlocks |
 | **C Header** | ✅ Complete | `async_core.h` |
 | **Static Library** | ✅ Complete | `libasync_core.a` (6.6 MB) |
-| **C Test Suite** | ✅ Complete | **27/27 tests passed (100%)** |
+| **C Test Suite** | ✅ Complete | **33/33 tests passed (100%)** |
 | **Zero Dependencies** | ✅ Verified | No external libs |
 
 ---
@@ -189,7 +190,7 @@ gcc -o test_core test.c -I../include -L../zig-out/lib -lasync_core -lpthread
 ╔══════════════════════════════════════════════════════════╗
 ║  Test Summary                                            ║
 ╠══════════════════════════════════════════════════════════╣
-║  Passed: 27                                             ║
+║  Passed: 33                                             ║
 ║  Failed: 0                                              ║
 ╚══════════════════════════════════════════════════════════╝
 ```
@@ -205,7 +206,9 @@ gcc -o test_core test.c -I../include -L../zig-out/lib -lasync_core -lpthread
 | Scheduler stats | 6 | ✅ ALL PASS | Statistics API |
 | Error handling | 5 | ✅ ALL PASS | NULL checks, error strings |
 | Auto CPU detection | 2 | ✅ ALL PASS | Detected 16 CPUs |
-| **TOTAL** | **27/27** | **100% PASS** | **🏆 Production ready** |
+| Task state transitions | 2 | ✅ ALL PASS | Pending/running/completed |
+| High load (50 tasks) | 4 | ✅ ALL PASS | Concurrent stress test |
+| **TOTAL** | **33/33** | **100% PASS** | **🏆 Production ready** |
 
 **Status:** Ready for production use in concurrent applications and high-performance systems.
 
