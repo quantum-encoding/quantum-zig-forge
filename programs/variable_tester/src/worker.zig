@@ -83,6 +83,10 @@ pub const Worker = struct {
     chunk_size: u32,
     running: std.atomic.Value(bool),
 
+    // Dynamically loaded test library
+    test_lib: ?test_interface.TestLibrary,
+    test_lib_path: ?[]u8, // Allocated copy of library path
+
     // Statistics
     tasks_processed: std.atomic.Value(u64),
     tasks_succeeded: std.atomic.Value(u64),
