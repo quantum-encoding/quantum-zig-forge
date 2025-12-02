@@ -271,7 +271,7 @@ export fn swarm_test_execute(
     task_len: usize,
     result_buf: [*]u8,
     result_buf_len: usize,
-) callconv(.C) i32 {
+) callconv(.c) i32 {
     if (!g_initialized or g_input_data == null) return -1;
     if (result_buf_len < 24) return -2; // Need space for result struct
 
