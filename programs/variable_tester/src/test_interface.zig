@@ -32,14 +32,14 @@ pub const TestConfig = extern struct {
 };
 
 /// Function pointer types for dynamic loading
-pub const InitFn = *const fn (config: [*]const u8, config_len: usize) callconv(.C) bool;
+pub const InitFn = *const fn (config: [*]const u8, config_len: usize) callconv(.c) bool;
 pub const ExecuteFn = *const fn (
     task_data: [*]const u8,
     task_len: usize,
     result_buf: [*]u8,
     result_buf_len: usize,
-) callconv(.C) i32;
-pub const CleanupFn = *const fn () callconv(.C) void;
+) callconv(.c) i32;
+pub const CleanupFn = *const fn () callconv(.c) void;
 
 /// Names of exported symbols
 pub const INIT_SYMBOL = "swarm_test_init";
