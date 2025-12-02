@@ -228,7 +228,8 @@ pub const Queen = struct {
 
         // Assign worker ID
         const worker_id = self.next_worker_id.fetchAdd(1, .monotonic);
-        const chunk_size = self.config.chunk_size * hello.cpu_cores;
+        // Use configured chunk_size directly for precise control during benchmarking
+        const chunk_size = self.config.chunk_size;
 
         // Send welcome
         const welcome = protocol.QueenWelcome.init(worker_id, chunk_size);
