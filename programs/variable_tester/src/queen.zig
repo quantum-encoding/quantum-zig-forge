@@ -336,14 +336,12 @@ pub const Queen = struct {
         if (result.success == 1) {
             _ = self.results_found.fetchAdd(1, .monotonic);
 
-            // Update best score atomically
-            var current = self.best_score.load(.acquire);
-            while (result.score > current) {
-                const result_swap = self.best_score.cmpxchgWeak(current, result.score, .release, .acquire);
-                if (result_swap) |new_current| {
-                    current = new_current;
-                } else {
-                    break;
+            // Update best score with mutex
+            {
+                self.mutex.lock();
+                defer self.mutex.unlock();
+                if (result.score > self.best_score) {
+                    self.best_score = result.score;
                 }
             }
 
