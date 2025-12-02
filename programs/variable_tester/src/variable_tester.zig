@@ -130,10 +130,10 @@ pub const VariableTester = struct {
         errdefer allocator.destroy(self);
 
         // Initialize task and result queues
-        const task_queue = try spsc.Queue(Task).init(allocator, queue_capacity);
+        const task_queue = try spsc.SpscQueue(Task).init(allocator, queue_capacity);
         errdefer task_queue.deinit();
 
-        const result_queue = try spsc.Queue(Result).init(allocator, queue_capacity);
+        const result_queue = try spsc.SpscQueue(Result).init(allocator, queue_capacity);
         errdefer result_queue.deinit();
 
         // Allocate worker arrays
