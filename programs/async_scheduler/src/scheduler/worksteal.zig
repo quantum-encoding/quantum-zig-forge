@@ -141,9 +141,12 @@ pub const Scheduler = struct {
         // Push to current thread's queue (round-robin if not started)
         const thread_id = task_id % self.thread_count;
         try self.work_queues[thread_id].push(entry);
-        // Wake up one sleeping worker to handle the new task
+        // Wake up ALL sleeping workers to handle the new task
+        // Using broadcast() instead of signal() ensures no tasks get stuck
+        // in queues when burst-spawning (signal only wakes one worker, which
+        // may miss workers that are in the middle of their steal attempts)
         self.work_mutex.lock();
-        self.work_cond.signal();
+        self.work_cond.broadcast();
         self.work_mutex.unlock();
         return TaskHandle{ .id = task_id, .scheduler = self };
     }
