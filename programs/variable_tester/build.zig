@@ -251,11 +251,16 @@ pub fn build(b: *std.Build) void {
     });
 
     // Compression Test Library (.so)
-    const libtest_compression = b.addSharedLibrary(.{
-        .name = "test_compression",
+    const libtest_compression_module = b.addModule("libtest_compression", .{
         .root_source_file = b.path("src/libtest_compression.zig"),
         .target = target,
         .optimize = .ReleaseFast,
+    });
+
+    const libtest_compression = b.addLibrary(.{
+        .name = "test_compression",
+        .root_module = libtest_compression_module,
+        .linkage = .dynamic,
     });
     libtest_compression.linkLibC(); // Required for export symbols
     b.installArtifact(libtest_compression);
