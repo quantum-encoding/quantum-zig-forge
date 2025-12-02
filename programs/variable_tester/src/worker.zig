@@ -211,6 +211,35 @@ pub const Worker = struct {
         self.chunk_size = welcome.chunk_size;
 
         std.debug.print("🐝 Registered as Worker {} (chunk_size={})\n", .{ self.assigned_id, self.chunk_size });
+
+        // Extract and load test library path
+        if (welcome.test_lib_len > 0) {
+            const lib_path_start = @sizeOf(protocol.QueenWelcome);
+            const lib_path_end = lib_path_start + welcome.test_lib_len;
+            if (lib_path_end > payload.len) return error.InvalidPayload;
+
+            const lib_path = payload[lib_path_start..lib_path_end];
+
+            // Store a copy of the path
+            self.test_lib_path = try self.allocator.dupe(u8, lib_path);
+            errdefer {
+                self.allocator.free(self.test_lib_path.?);
+                self.test_lib_path = null;
+            }
+
+            std.debug.print("🐝 Loading test library: {s}\n", .{lib_path});
+
+            // Load the shared library via dlopen
+            self.test_lib = try test_interface.TestLibrary.load(lib_path);
+            errdefer {
+                self.test_lib.?.unload();
+                self.test_lib = null;
+            }
+
+            std.debug.print("🐝 Test library loaded successfully\n", .{});
+        } else {
+            std.debug.print("🐝 Warning: No test library specified by Queen\n", .{});
+        }
     }
 
     /// Start the worker loop
