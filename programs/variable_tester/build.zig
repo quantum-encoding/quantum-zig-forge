@@ -195,4 +195,26 @@ pub fn build(b: *std.Build) void {
 
     const crypto_step = b.step("crypto", "Run crypto brute-force benchmark");
     crypto_step.dependOn(&crypto_cmd.step);
+
+    // ==================== The Forge - Main Variable Tester ====================
+    const forge_module = b.addModule("forge", .{
+        .root_source_file = b.path("src/forge.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+
+    const forge_exe = b.addExecutable(.{
+        .name = "forge",
+        .root_module = forge_module,
+    });
+    b.installArtifact(forge_exe);
+
+    const forge_cmd = b.addRunArtifact(forge_exe);
+    forge_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        forge_cmd.addArgs(args);
+    }
+
+    const forge_step = b.step("forge", "Run The Forge variable tester");
+    forge_step.dependOn(&forge_cmd.step);
 }
