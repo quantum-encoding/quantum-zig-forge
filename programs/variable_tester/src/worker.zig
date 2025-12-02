@@ -9,8 +9,8 @@
 const std = @import("std");
 const posix = std.posix;
 const protocol = @import("protocol.zig");
-const variable_tester = @import("variable_tester.zig");
-const test_functions = @import("test_functions.zig");
+const variable_tester = @import("variable_tester");
+const test_functions = @import("test_functions");
 
 /// Worker configuration
 pub const WorkerConfig = struct {
