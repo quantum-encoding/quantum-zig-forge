@@ -287,20 +287,30 @@ pub const Queen = struct {
     }
 
     fn handleWorkRequest(self: *Queen, sockfd: posix.socket_t, worker_id: u64, chunk_size: u32) void {
-        // Atomically claim a chunk of tasks
-        const start_idx = self.next_task_idx.load(.monotonic);
+        // Atomically claim a chunk of tasks using compare-and-swap
+        var start_idx: u64 = undefined;
+        var end_idx: u64 = undefined;
+        var actual_count: u32 = undefined;
 
-        if (start_idx >= self.total_tasks) {
-            // No more work
-            protocol.Net.sendMessage(sockfd, .no_work, &.{}) catch {};
-            return;
+        while (true) {
+            start_idx = self.next_task_idx.load(.monotonic);
+
+            if (start_idx >= self.total_tasks) {
+                // No more work
+                protocol.Net.sendMessage(sockfd, .no_work, &.{}) catch {};
+                return;
+            }
+
+            end_idx = @min(start_idx + chunk_size, self.total_tasks);
+            actual_count = @intCast(end_idx - start_idx);
+
+            // Try to atomically update next_task_idx
+            if (self.next_task_idx.cmpxchgStrong(start_idx, end_idx, .monotonic, .monotonic) == null) {
+                // Success - we claimed the range [start_idx, end_idx)
+                break;
+            }
+            // Failed - another thread claimed first, retry
         }
-
-        const end_idx = @min(start_idx + chunk_size, self.total_tasks);
-        const actual_count: u32 = @intCast(end_idx - start_idx);
-
-        // Update next_task_idx with the actual count we're dispatching
-        _ = self.next_task_idx.fetchAdd(actual_count, .monotonic);
 
         // Build dispatch message
         var payload = std.ArrayListUnmanaged(u8){};
