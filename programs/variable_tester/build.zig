@@ -20,6 +20,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Test Interface module (shared types for dlopen loading)
+    const test_interface_module = b.addModule("test_interface", .{
+        .root_source_file = b.path("src/test_interface.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Variable tester module (for imports)
     const vt_module = b.addModule("variable_tester", .{
         .root_source_file = b.path("src/variable_tester.zig"),
