@@ -6,6 +6,7 @@
 //!   --end <number>      Ending number for task range (default: 10000000)
 //!   --chunk <size>      Tasks per chunk dispatched to workers (default: 1000)
 //!   --test <name>       Test function: compression, prime, hash, numeric_match
+//!   --lib <path>        Path to test library .so (default: ./zig-out/lib/libtest_compression.so)
 
 const std = @import("std");
 const posix = std.posix;
