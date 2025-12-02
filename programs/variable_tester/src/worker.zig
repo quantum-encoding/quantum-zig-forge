@@ -487,18 +487,6 @@ pub const Worker = struct {
         }
     }
 
-    /// Get test function by ID
-    fn getTestFunction(id: protocol.TestFnId) variable_tester.TestFn {
-        return switch (id) {
-            .lossless_compression => test_functions.testLosslessCompression,
-            .prime_number => test_functions.testPrimeNumber,
-            .hash_collision => test_functions.testHashCollision,
-            .math_formula => test_functions.testMathFormula,
-            .numeric_match => test_functions.testNumericMatch,
-            .custom => test_functions.testLosslessCompression, // fallback
-        };
-    }
-
     /// Get current statistics
     pub fn getStats(self: *Worker) WorkerStats {
         const now = (posix.clock_gettime(.REALTIME) catch return WorkerStats{
