@@ -1117,6 +1117,80 @@ const FormulaResult = struct {
 };
 
 // ============================================================================
+// Parallel Worker
+// ============================================================================
+
+const WorkItem = struct {
+    formula: []const u8,
+    steps: [16]CompressionStep,
+    step_count: usize,
+    index: usize,
+};
+
+const WorkResult = struct {
+    formula: []const u8,
+    ratio: f64,
+    is_lossless: bool,
+    throughput_mbps: f64,
+    original_size: usize,
+    compressed_size: usize,
+    encode_time_ns: i128,
+    success: bool,
+    index: usize,
+};
+
+fn workerThread(
+    work_items: []const WorkItem,
+    input_data: []const u8,
+    results: []WorkResult,
+    completed: *std.atomic.Value(usize),
+) void {
+    // Each thread gets its own allocator
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const thread_alloc = arena.allocator();
+
+    for (work_items) |item| {
+        const result = executeCompression(thread_alloc, input_data, item.steps[0..item.step_count]) catch {
+            results[item.index] = .{
+                .formula = item.formula,
+                .ratio = 999.0,
+                .is_lossless = false,
+                .throughput_mbps = 0,
+                .original_size = input_data.len,
+                .compressed_size = 0,
+                .encode_time_ns = 0,
+                .success = false,
+                .index = item.index,
+            };
+            _ = completed.fetchAdd(1, .monotonic);
+            continue;
+        };
+
+        // Free compressed data immediately - we only need metrics
+        thread_alloc.free(result.compressed_data);
+
+        results[item.index] = .{
+            .formula = item.formula,
+            .ratio = result.ratio,
+            .is_lossless = result.is_lossless,
+            .throughput_mbps = result.throughput_mbps,
+            .original_size = result.original_size,
+            .compressed_size = result.compressed_size,
+            .encode_time_ns = result.encode_time_ns,
+            .success = true,
+            .index = item.index,
+        };
+        _ = completed.fetchAdd(1, .monotonic);
+
+        // Reset arena periodically to avoid memory bloat
+        if (item.index % 100 == 0) {
+            _ = arena.reset(.retain_capacity);
+        }
+    }
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -1130,6 +1204,7 @@ pub fn main() !void {
     var input_path: ?[]const u8 = null;
     var output_dir: []const u8 = "./bench_results";
     var top_n: usize = 20;
+    var n_threads: usize = 0; // 0 = auto-detect
 
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
@@ -1144,11 +1219,13 @@ pub fn main() !void {
             if (args.next()) |v| output_dir = v;
         } else if (std.mem.eql(u8, arg, "--top")) {
             if (args.next()) |v| top_n = try std.fmt.parseInt(usize, v, 10);
+        } else if (std.mem.eql(u8, arg, "--threads") or std.mem.eql(u8, arg, "-j")) {
+            if (args.next()) |v| n_threads = try std.fmt.parseInt(usize, v, 10);
         }
     }
 
     if (formulas_path == null or input_path == null) {
-        std.debug.print("Usage: compression-bench --formulas <file> --input <data_file> [--output <dir>] [--top N]\n\n", .{});
+        std.debug.print("Usage: compression-bench --formulas <file> --input <data_file> [--output <dir>] [--top N] [--threads N]\n\n", .{});
         std.debug.print("Supported algorithms:\n", .{});
         std.debug.print("  RLE       - Run-Length Encoding\n", .{});
         std.debug.print("  DELTA     - Delta Encoding\n", .{});
@@ -1158,11 +1235,18 @@ pub fn main() !void {
         std.debug.print("  LZ77      - Dictionary Compression\n", .{});
         std.debug.print("  HUFFMAN   - Canonical Huffman Coding\n", .{});
         std.debug.print("  ARITH     - Arithmetic Coding (near-optimal entropy)\n", .{});
+        std.debug.print("\nOptions:\n", .{});
+        std.debug.print("  --threads N  Number of parallel threads (default: auto-detect)\n", .{});
         std.debug.print("\nExample formulas:\n", .{});
         std.debug.print("  RLE\n", .{});
         std.debug.print("  BWT+MTF+ZERORLE\n", .{});
         std.debug.print("  BWT+MTF+ARITH\n", .{});
         return;
+    }
+
+    // Auto-detect thread count
+    if (n_threads == 0) {
+        n_threads = std.Thread.getCpuCount() catch 4;
     }
 
     // Load input data
@@ -1181,64 +1265,90 @@ pub fn main() !void {
     defer allocator.free(formulas_content);
     _ = try formulas_file.preadAll(formulas_content, 0);
 
-    // Count formulas
-    var formula_count: usize = 0;
+    // Parse all formulas into work items
+    var work_items = std.ArrayListUnmanaged(WorkItem){};
+    defer work_items.deinit(allocator);
+
     var line_iter = std.mem.splitScalar(u8, formulas_content, '\n');
-    while (line_iter.next()) |line| {
-        if (std.mem.trim(u8, line, &std.ascii.whitespace).len > 0) {
-            formula_count += 1;
-        }
-    }
-
-    std.debug.print("\n", .{});
-    std.debug.print("╔══════════════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║  COMPRESSION FORMULA BENCHMARK                                        ║\n", .{});
-    std.debug.print("╠══════════════════════════════════════════════════════════════════════╣\n", .{});
-    std.debug.print("║  Input Size: {} bytes                                                \n", .{input_data.len});
-    std.debug.print("║  Formulas: {}                                                        \n", .{formula_count});
-    std.debug.print("╚══════════════════════════════════════════════════════════════════════╝\n", .{});
-    std.debug.print("\n", .{});
-
-    // Process each formula
-    var results = std.ArrayListUnmanaged(FormulaResult){};
-    defer results.deinit(allocator);
-
-    var successful: usize = 0;
-    var lossless_count: usize = 0;
-    var best_ratio: f64 = 999.0;
-
-    const start_time = try posix.clock_gettime(.MONOTONIC);
-
-    line_iter = std.mem.splitScalar(u8, formulas_content, '\n');
+    var idx: usize = 0;
     while (line_iter.next()) |line| {
         const formula = std.mem.trim(u8, line, &std.ascii.whitespace);
         if (formula.len == 0) continue;
 
-        var steps: [16]CompressionStep = undefined;
-        const step_count = parseFormula(formula, &steps) catch continue;
-        if (step_count == 0) continue;
+        var item = WorkItem{
+            .formula = formula,
+            .steps = undefined,
+            .step_count = 0,
+            .index = idx,
+        };
 
-        const result = executeCompression(allocator, input_data, steps[0..step_count]) catch continue;
-        defer allocator.free(result.compressed_data);
+        item.step_count = parseFormula(formula, &item.steps) catch continue;
+        if (item.step_count == 0) continue;
 
-        successful += 1;
-        if (result.is_lossless) {
-            lossless_count += 1;
-            if (result.ratio < best_ratio) {
-                best_ratio = result.ratio;
-            }
-        }
+        try work_items.append(allocator, item);
+        idx += 1;
+    }
 
-        const formula_copy = try allocator.dupe(u8, formula);
-        try results.append(allocator, .{
-            .formula = formula_copy,
-            .ratio = result.ratio,
-            .is_lossless = result.is_lossless,
-            .throughput_mbps = result.throughput_mbps,
-            .original_size = result.original_size,
-            .compressed_size = result.compressed_size,
-            .encode_time_ns = result.encode_time_ns,
+    const formula_count = work_items.items.len;
+
+    std.debug.print("\n", .{});
+    std.debug.print("╔══════════════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║  COMPRESSION FORMULA BENCHMARK (PARALLEL)                            ║\n", .{});
+    std.debug.print("╠══════════════════════════════════════════════════════════════════════╣\n", .{});
+    std.debug.print("║  Input Size: {} bytes                                                \n", .{input_data.len});
+    std.debug.print("║  Formulas: {}                                                        \n", .{formula_count});
+    std.debug.print("║  Threads: {}                                                         \n", .{n_threads});
+    std.debug.print("╚══════════════════════════════════════════════════════════════════════╝\n", .{});
+    std.debug.print("\n", .{});
+
+    // Allocate results array
+    const work_results = try allocator.alloc(WorkResult, formula_count);
+    defer allocator.free(work_results);
+
+    // Track completion
+    var completed = std.atomic.Value(usize).init(0);
+
+    const start_time = try posix.clock_gettime(.MONOTONIC);
+
+    // Distribute work across threads
+    const actual_threads = @min(n_threads, formula_count);
+    const items_per_thread = (formula_count + actual_threads - 1) / actual_threads;
+
+    var threads = try allocator.alloc(std.Thread, actual_threads);
+    defer allocator.free(threads);
+
+    for (0..actual_threads) |t| {
+        const start_idx = t * items_per_thread;
+        const end_idx = @min(start_idx + items_per_thread, formula_count);
+        if (start_idx >= formula_count) break;
+
+        threads[t] = try std.Thread.spawn(.{}, workerThread, .{
+            work_items.items[start_idx..end_idx],
+            input_data,
+            work_results,
+            &completed,
         });
+    }
+
+    // Progress reporting
+    var last_completed: usize = 0;
+    while (completed.load(.monotonic) < formula_count) {
+        const current = completed.load(.monotonic);
+        if (current != last_completed) {
+            std.debug.print("\r  Progress: {}/{} formulas ({d:.1}%)   ", .{
+                current,
+                formula_count,
+                @as(f64, @floatFromInt(current)) / @as(f64, @floatFromInt(formula_count)) * 100.0,
+            });
+            last_completed = current;
+        }
+        std.time.sleep(10_000_000); // 10ms
+    }
+    std.debug.print("\r  Progress: {}/{} formulas (100.0%)   \n", .{ formula_count, formula_count });
+
+    // Wait for all threads
+    for (threads[0..actual_threads]) |t| {
+        t.join();
     }
 
     const end_time = try posix.clock_gettime(.MONOTONIC);
