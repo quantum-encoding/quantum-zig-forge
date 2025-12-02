@@ -111,8 +111,12 @@ pub const Scheduler = struct {
         // Create task entry
         const entry = try self.allocator.create(TaskEntry);
         errdefer self.allocator.destroy(entry);
-        entry.task = Task.init(task_id);
-        entry.allocator = self.allocator;
+        entry.* = TaskEntry{
+            .task = Task.init(task_id),
+            .func = undefined,
+            .context = undefined,
+            .allocator = self.allocator,
+        };
         // Create wrapper for function + args
         const Args = @TypeOf(args);
         const Context = struct {
