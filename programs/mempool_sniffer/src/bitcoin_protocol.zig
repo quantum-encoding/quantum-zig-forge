@@ -121,8 +121,15 @@ pub fn sendVerack(sockfd: posix.socket_t) !void {
     std.mem.writeInt(u32, message[offset..][0..4], 0, .little);
     offset += 4;
 
-    // Checksum: empty payload checksum
-    std.mem.writeInt(u32, message[offset..][0..4], 0x5df6e0e2, .little);
+    // Checksum: double-SHA256 of empty payload
+    // SHA256(SHA256("")) = 5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456
+    var hash1: [32]u8 = undefined;
+    var hash2: [32]u8 = undefined;
+    const empty: [0]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(&empty, &hash1, .{});
+    std.crypto.hash.sha2.Sha256.hash(&hash1, &hash2, .{});
+    const checksum = std.mem.readInt(u32, hash2[0..4], .little);
+    std.mem.writeInt(u32, message[offset..][0..4], checksum, .little);
 
     _ = try posix.send(sockfd, &message, 0);
 }
