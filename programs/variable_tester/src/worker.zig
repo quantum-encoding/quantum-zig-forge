@@ -322,6 +322,7 @@ pub const Worker = struct {
                     1.0;
 
                 const result = variable_tester.Result{
+                    .task_id = task.task_id,
                     .success = true,
                     .score = score,
                     .data = result_buf[0..@intCast(result_code)],
