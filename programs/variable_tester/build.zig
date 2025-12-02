@@ -217,4 +217,26 @@ pub fn build(b: *std.Build) void {
 
     const forge_step = b.step("forge", "Run The Forge variable tester");
     forge_step.dependOn(&forge_cmd.step);
+
+    // ==================== Compression Benchmark - Real I/O Testing ====================
+    const compress_bench_module = b.addModule("compression_bench", .{
+        .root_source_file = b.path("src/compression_bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+
+    const compress_bench_exe = b.addExecutable(.{
+        .name = "compression-bench",
+        .root_module = compress_bench_module,
+    });
+    b.installArtifact(compress_bench_exe);
+
+    const compress_bench_cmd = b.addRunArtifact(compress_bench_exe);
+    compress_bench_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        compress_bench_cmd.addArgs(args);
+    }
+
+    const compress_bench_step = b.step("compress-bench", "Run compression formula benchmark with real I/O");
+    compress_bench_step.dependOn(&compress_bench_cmd.step);
 }
