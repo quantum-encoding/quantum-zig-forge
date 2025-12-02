@@ -305,7 +305,7 @@ export fn swarm_test_execute(
 }
 
 /// Cleanup resources
-export fn swarm_test_cleanup() callconv(.C) void {
+export fn swarm_test_cleanup() callconv(.c) void {
     g_input_data = null;
     g_initialized = false;
 
