@@ -588,21 +588,22 @@ const Huffman = struct {
         try output.append(allocator, @truncate(total_bits >> 16));
         try output.append(allocator, @truncate(total_bits >> 24));
 
-        // Pack bits into bytes
-        var bit_buffer: u32 = 0;
-        var bits_in_buffer: u5 = 0;
+        // Pack bits into bytes using 64-bit buffer for safety
+        var bit_buffer: u64 = 0;
+        var bits_in_buffer: u6 = 0;
 
         for (input) |c| {
             const sym_code = codes[c];
-            const sym_len = code_len[c];
+            const sym_len: u6 = @intCast(code_len[c]);
 
             // Add code bits to buffer (MSB first)
-            bit_buffer |= @as(u32, sym_code) << (32 - bits_in_buffer - sym_len);
-            bits_in_buffer += @intCast(sym_len);
+            const shift_amt: u6 = 64 - bits_in_buffer - sym_len;
+            bit_buffer |= @as(u64, sym_code) << shift_amt;
+            bits_in_buffer += sym_len;
 
             // Flush complete bytes
             while (bits_in_buffer >= 8) {
-                try output.append(allocator, @truncate(bit_buffer >> 24));
+                try output.append(allocator, @truncate(bit_buffer >> 56));
                 bit_buffer <<= 8;
                 bits_in_buffer -= 8;
             }
@@ -610,7 +611,7 @@ const Huffman = struct {
 
         // Flush remaining bits
         if (bits_in_buffer > 0) {
-            try output.append(allocator, @truncate(bit_buffer >> 24));
+            try output.append(allocator, @truncate(bit_buffer >> 56));
         }
 
         return output.toOwnedSlice(allocator);
