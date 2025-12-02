@@ -329,22 +329,21 @@ pub const Worker = struct {
         std.debug.print("🐝 Worker loop ended\n", .{});
     }
 
-    /// Process a chunk of work
+    /// Process a chunk of work - enqueues tasks for parallel execution
     fn processWorkChunk(self: *Worker, payload: []const u8) void {
         if (payload.len < @sizeOf(protocol.WorkDispatch)) return;
 
         const dispatch: *const protocol.WorkDispatch = @ptrCast(@alignCast(payload.ptr));
 
-        std.debug.print("🐝 Processing {} tasks starting at {}\n", .{ dispatch.task_count, dispatch.start_task_id });
+        std.debug.print("🐝 Enqueueing {} tasks starting at {}\n", .{ dispatch.task_count, dispatch.start_task_id });
 
-        // Get test function
-        const test_fn = getTestFunction(@enumFromInt(dispatch.test_fn_id));
+        const queue = self.task_queue orelse return;
 
-        // Parse and execute tasks
+        // Parse tasks and enqueue for parallel processing
         var offset: usize = @sizeOf(protocol.WorkDispatch);
-        var tasks_done: u32 = 0;
+        var tasks_enqueued: u32 = 0;
 
-        while (tasks_done < dispatch.task_count and offset < payload.len) : (tasks_done += 1) {
+        while (tasks_enqueued < dispatch.task_count and offset < payload.len) : (tasks_enqueued += 1) {
             if (offset + @sizeOf(protocol.TaskEntry) > payload.len) break;
 
             const entry: *const protocol.TaskEntry = @ptrCast(@alignCast(payload[offset..].ptr));
@@ -355,31 +354,27 @@ pub const Worker = struct {
             const task_data = payload[offset..][0..entry.data_len];
             offset += entry.data_len;
 
-            // Create task and execute
-            const task = variable_tester.Task.init(entry.task_id, task_data);
+            // Enqueue task for parallel processing
+            const task_item = TaskItem{
+                .task_id = entry.task_id,
+                .data = task_data,
+                .test_fn_id = dispatch.test_fn_id,
+            };
 
-            if (test_fn(&task, self.allocator)) |result| {
-                _ = self.tasks_processed.fetchAdd(1, .monotonic);
+            _ = self.pending_tasks.fetchAdd(1, .release);
 
-                if (result.success) {
-                    _ = self.tasks_succeeded.fetchAdd(1, .monotonic);
-
-                    // Report result to Queen
-                    self.reportResult(entry.task_id, result) catch |err| {
-                        std.debug.print("🐝 Failed to report result: {}\n", .{err});
-                    };
-                }
-
-                // Free result data if allocated
-                if (result.data.len > 0 and result.data.ptr != task_data.ptr) {
-                    self.allocator.free(result.data);
-                }
-            } else |_| {
-                _ = self.tasks_processed.fetchAdd(1, .monotonic);
+            // Spin until we can enqueue (should rarely happen with 1M capacity)
+            while (!queue.push(task_item)) {
+                std.atomic.spinLoopHint();
             }
         }
 
-        std.debug.print("🐝 Completed {} tasks\n", .{tasks_done});
+        // Wait for all tasks in this chunk to complete before requesting more
+        while (self.pending_tasks.load(.acquire) > 0) {
+            std.atomic.spinLoopHint();
+        }
+
+        std.debug.print("🐝 Completed {} tasks\n", .{tasks_enqueued});
     }
 
     /// Report a successful result to Queen
