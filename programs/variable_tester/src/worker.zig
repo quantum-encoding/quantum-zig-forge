@@ -304,26 +304,37 @@ pub const Worker = struct {
 
     /// Execute a single task (called by worker threads)
     fn executeTask(self: *Worker, task: TaskItem) void {
-        const test_fn = getTestFunction(@enumFromInt(task.test_fn_id));
-        const vt_task = variable_tester.Task.init(task.task_id, task.data);
+        // Use dynamically loaded test library
+        if (self.test_lib) |*lib| {
+            var result_buf: [4096]u8 = undefined;
+            const result_code = lib.execute(task.data, &result_buf);
 
-        if (test_fn(&vt_task, self.allocator)) |result| {
             _ = self.tasks_processed.fetchAdd(1, .monotonic);
 
-            if (result.success) {
+            if (result_code > 0) {
+                // Success - parse result from buffer
                 _ = self.tasks_succeeded.fetchAdd(1, .monotonic);
+
+                // Extract score from result buffer (format: [u8 success][padding 7][f64 ratio]...)
+                const score: f64 = if (result_code >= 16)
+                    @bitCast(result_buf[8..16].*)
+                else
+                    1.0;
+
+                const result = variable_tester.Result{
+                    .success = true,
+                    .score = score,
+                    .data = result_buf[0..@intCast(result_code)],
+                };
 
                 // Report result to Queen (mutex protected)
                 self.result_mutex.lock();
                 defer self.result_mutex.unlock();
                 self.reportResult(task.task_id, result) catch {};
             }
-
-            // Free result data if allocated
-            if (result.data.len > 0 and result.data.ptr != task.data.ptr) {
-                self.allocator.free(result.data);
-            }
-        } else |_| {
+            // result_code <= 0 means no match or error, no reporting needed
+        } else {
+            // No library loaded - count as processed but failed
             _ = self.tasks_processed.fetchAdd(1, .monotonic);
         }
     }
