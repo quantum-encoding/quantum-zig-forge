@@ -61,7 +61,7 @@ pub const TestLibrary = struct {
         @memcpy(path_buf[0..path.len], path);
         path_buf[path.len] = 0;
 
-        const handle = std.c.dlopen(@ptrCast(&path_buf), std.c.RTLD.NOW);
+        const handle = std.c.dlopen(@ptrCast(&path_buf), .{ .LAZY = false, .NOW = true });
         if (handle == null) {
             std.debug.print("dlopen failed: {s}\n", .{std.c.dlerror() orelse "unknown error"});
             return error.LibraryLoadFailed;
