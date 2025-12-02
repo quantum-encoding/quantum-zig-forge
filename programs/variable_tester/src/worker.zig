@@ -1,16 +1,20 @@
 //! The Worker - Compute Drone for the Brute-Force Swarm
 //!
 //! Responsibilities:
-//! - Connect to Queen
+//! - Connect to Queen and receive test library path
+//! - Dynamically load test function via dlopen()
 //! - Request and execute task chunks using multi-threaded pool
 //! - Report successful results
 //! - Send periodic heartbeats
+//!
+//! Architecture: "Dumb Workhorse" - Worker is test-agnostic.
+//! Queen specifies which .so library to load at connection time.
 
 const std = @import("std");
 const posix = std.posix;
 const protocol = @import("protocol");
 const variable_tester = @import("variable_tester");
-const test_functions = @import("test_functions");
+const test_interface = @import("test_interface");
 
 /// Worker configuration
 pub const WorkerConfig = struct {
