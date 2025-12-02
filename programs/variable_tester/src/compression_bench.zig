@@ -988,6 +988,8 @@ fn parseFormula(formula: []const u8, steps: *[16]CompressionStep) !usize {
             steps[count] = .lz77;
         } else if (std.ascii.eqlIgnoreCase(trimmed, "HUFFMAN") or std.ascii.eqlIgnoreCase(trimmed, "HUF")) {
             steps[count] = .huffman;
+        } else if (std.ascii.eqlIgnoreCase(trimmed, "ARITH") or std.ascii.eqlIgnoreCase(trimmed, "ARITHMETIC") or std.ascii.eqlIgnoreCase(trimmed, "AC")) {
+            steps[count] = .arithmetic;
         } else {
             return error.UnknownStep;
         }
