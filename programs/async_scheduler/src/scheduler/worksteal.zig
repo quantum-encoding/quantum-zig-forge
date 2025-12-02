@@ -140,13 +140,10 @@ pub const Scheduler = struct {
             defer self.task_map_mutex.unlock();
             try self.task_map.put(task_id, entry);
         }
-        // Push to queue first (lock-free)
+        // Push to queue (lock-free)
         const thread_id = task_id % self.thread_count;
         try self.work_queues[thread_id].push(entry);
-        // Increment pending counter and wake workers
-        // Order: push to queue THEN increment counter THEN broadcast
-        // Workers check counter first, so they'll see the task
-        _ = self.pending_tasks.fetchAdd(1, .release);
+        // Wake up all workers
         self.work_mutex.lock();
         self.work_cond.broadcast();
         self.work_mutex.unlock();
