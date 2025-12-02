@@ -2,7 +2,7 @@
 //!
 //! Responsibilities:
 //! - Connect to Queen
-//! - Request and execute task chunks
+//! - Request and execute task chunks using multi-threaded pool
 //! - Report successful results
 //! - Send periodic heartbeats
 
@@ -17,6 +17,56 @@ pub const WorkerConfig = struct {
     queen_host: []const u8 = "127.0.0.1",
     queen_port: u16 = protocol.DEFAULT_PORT,
     num_threads: ?usize = null, // null = auto-detect
+};
+
+/// Task item for thread pool processing
+const TaskItem = struct {
+    task_id: u64,
+    data: []const u8,
+    test_fn_id: u32,
+};
+
+/// Thread-safe task queue for parallel processing
+const TaskQueue = struct {
+    items: []TaskItem,
+    head: std.atomic.Value(usize),
+    tail: std.atomic.Value(usize),
+    capacity: usize,
+
+    fn init(allocator: std.mem.Allocator, capacity: usize) !*TaskQueue {
+        const self = try allocator.create(TaskQueue);
+        self.items = try allocator.alloc(TaskItem, capacity);
+        self.head = std.atomic.Value(usize).init(0);
+        self.tail = std.atomic.Value(usize).init(0);
+        self.capacity = capacity;
+        return self;
+    }
+
+    fn deinit(self: *TaskQueue, allocator: std.mem.Allocator) void {
+        allocator.free(self.items);
+        allocator.destroy(self);
+    }
+
+    fn push(self: *TaskQueue, item: TaskItem) bool {
+        const tail = self.tail.load(.monotonic);
+        const next_tail = (tail + 1) % self.capacity;
+        if (next_tail == self.head.load(.acquire)) return false; // Full
+        self.items[tail] = item;
+        self.tail.store(next_tail, .release);
+        return true;
+    }
+
+    fn pop(self: *TaskQueue) ?TaskItem {
+        const head = self.head.load(.monotonic);
+        if (head == self.tail.load(.acquire)) return null; // Empty
+        const item = self.items[head];
+        self.head.store((head + 1) % self.capacity, .release);
+        return item;
+    }
+
+    fn isEmpty(self: *TaskQueue) bool {
+        return self.head.load(.acquire) == self.tail.load(.acquire);
+    }
 };
 
 /// The Worker drone
