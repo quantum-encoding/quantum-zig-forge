@@ -422,6 +422,7 @@ pub const Queen = struct {
             .tasks_completed = total_completed,
             .tasks_succeeded = total_succeeded,
             .solutions_found = self.results_found.load(.monotonic),
+            .best_score = self.best_score,
             .best_score = self.best_score.load(.monotonic),
         };
     }
