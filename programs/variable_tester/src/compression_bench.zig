@@ -1314,9 +1314,12 @@ pub fn main() !void {
     const actual_threads = @min(n_threads, formula_count);
     const items_per_thread = (formula_count + actual_threads - 1) / actual_threads;
 
-    var threads = try allocator.alloc(std.Thread, actual_threads);
+    var threads = try allocator.alloc(?std.Thread, actual_threads);
     defer allocator.free(threads);
+    @memset(threads, null);
 
+    // Spawn all threads
+    var spawned_count: usize = 0;
     for (0..actual_threads) |t| {
         const start_idx = t * items_per_thread;
         const end_idx = @min(start_idx + items_per_thread, formula_count);
@@ -1328,7 +1331,10 @@ pub fn main() !void {
             work_results,
             &completed,
         });
+        spawned_count += 1;
     }
+
+    std.debug.print("  Spawned {} worker threads...\n", .{spawned_count});
 
     // Progress reporting
     var last_completed: usize = 0;
@@ -1347,8 +1353,10 @@ pub fn main() !void {
     std.debug.print("\r  Progress: {}/{} formulas (100.0%)   \n", .{ formula_count, formula_count });
 
     // Wait for all threads
-    for (threads[0..actual_threads]) |t| {
-        t.join();
+    for (threads) |maybe_t| {
+        if (maybe_t) |t| {
+            t.join();
+        }
     }
 
     const end_time = try posix.clock_gettime(.MONOTONIC);
