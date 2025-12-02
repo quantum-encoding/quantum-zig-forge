@@ -186,6 +186,7 @@ pub const TestFnId = enum(u32) {
     prime_number = 1,
     hash_collision = 2,
     math_formula = 3,
+    numeric_match = 4,
     custom = 0xFFFFFFFF,
 };
 
