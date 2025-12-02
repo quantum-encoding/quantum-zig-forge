@@ -210,6 +210,11 @@ gcc -o test_core test.c -I../include -L../zig-out/lib -lasync_core -lpthread
 | High load (50 tasks) | 4 | ✅ ALL PASS | Concurrent stress test |
 | **TOTAL** | **33/33** | **100% PASS** | **🏆 Production ready** |
 
+**Key Fix Applied:** Added condition variable with spin-before-sleep optimization:
+- Workers spin 100 iterations before sleeping on condition variable
+- Improves latency for burst workloads while preventing CPU saturation
+- `stop()` broadcasts wake-up signal to all workers for clean shutdown
+
 **Status:** Ready for production use in concurrent applications and high-performance systems.
 
 ---

@@ -160,7 +160,7 @@ pub const Scheduler = struct {
         var rng = std.Random.DefaultPrng.init(@intCast(worker_id));
         const random = rng.random();
         var idle_spins: usize = 0;
-        const max_spins: usize = 100; // Spin briefly before sleeping
+        const max_spins: usize = 1000; // Spin longer for high-throughput scenarios
 
         while (self.running.load(.acquire)) {
             // Try to pop from own queue
