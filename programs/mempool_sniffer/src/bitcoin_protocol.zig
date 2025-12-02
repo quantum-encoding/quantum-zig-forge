@@ -189,18 +189,23 @@ pub fn sendGetData(sockfd: posix.socket_t, inv_type: u32, hash: [32]u8) !void {
     std.mem.writeInt(u32, message[msg_offset..][0..4], 37, .little);
     msg_offset += 4;
 
-    // Checksum (simplified - in production should be double SHA256)
-    std.mem.writeInt(u32, message[msg_offset..][0..4], 0, .little);
+    // Build payload first to calculate checksum
+    var payload: [37]u8 = undefined;
+    payload[0] = 1; // varint count
+    std.mem.writeInt(u32, payload[1..][0..4], inv_type, .little);
+    @memcpy(payload[5..][0..32], &hash);
+
+    // Checksum: double-SHA256 of payload
+    var hash1: [32]u8 = undefined;
+    var hash2: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(&payload, &hash1, .{});
+    std.crypto.hash.sha2.Sha256.hash(&hash1, &hash2, .{});
+    const checksum = std.mem.readInt(u32, hash2[0..4], .little);
+    std.mem.writeInt(u32, message[msg_offset..][0..4], checksum, .little);
     msg_offset += 4;
 
-    // Payload: varint count (1)
-    message[msg_offset] = 1;
-    msg_offset += 1;
-
-    // Inv vector: type + hash
-    std.mem.writeInt(u32, message[msg_offset..][0..4], inv_type, .little);
-    msg_offset += 4;
-    @memcpy(message[msg_offset..][0..32], &hash);
+    // Copy payload
+    @memcpy(message[msg_offset..][0..37], &payload);
 
     _ = try posix.send(sockfd, &message, 0);
 }
