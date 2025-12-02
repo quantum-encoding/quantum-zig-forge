@@ -1054,6 +1054,7 @@ fn executeCompression(
             .zero_rle => try ZeroRLE.decode(allocator, decompressed),
             .lz77 => try LZ77.decode(allocator, decompressed),
             .huffman => try Huffman.decode(allocator, decompressed),
+            .arithmetic => try Arithmetic.decode(allocator, decompressed),
         };
 
         if (prev) |p| allocator.free(p);
