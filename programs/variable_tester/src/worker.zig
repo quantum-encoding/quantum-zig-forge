@@ -134,6 +134,17 @@ pub const Worker = struct {
 
     pub fn deinit(self: *Worker) void {
         self.stop();
+
+        // Clean up thread pool
+        if (self.pool_threads) |threads| {
+            self.allocator.free(threads);
+        }
+
+        // Clean up task queue
+        if (self.task_queue) |queue| {
+            queue.deinit(self.allocator);
+        }
+
         self.allocator.destroy(self);
     }
 
