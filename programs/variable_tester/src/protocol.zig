@@ -81,17 +81,21 @@ pub const WorkerHello = extern struct {
 };
 
 /// Queen welcome payload
+/// Extended to include test library path for dynamic loading
 pub const QueenWelcome = extern struct {
     version: u8 align(1),
     assigned_id: u64 align(1), // Queen-assigned worker ID
     chunk_size: u32 align(1), // Preferred chunk size for this worker
-    _reserved: [3]u8 align(1) = .{ 0, 0, 0 },
+    test_lib_len: u16 align(1), // Length of test library path that follows
+    _reserved: [1]u8 align(1) = .{0},
+    // Followed by: test_lib_len bytes of null-terminated library path
 
-    pub fn init(assigned_id: u64, chunk_size: u32) QueenWelcome {
+    pub fn init(assigned_id: u64, chunk_size: u32, test_lib_len: u16) QueenWelcome {
         return QueenWelcome{
             .version = VERSION,
             .assigned_id = assigned_id,
             .chunk_size = chunk_size,
+            .test_lib_len = test_lib_len,
         };
     }
 };
