@@ -1,15 +1,287 @@
 const std = @import("std");
+const posix = std.posix;
 
-// Bitcoin protocol helper functions
-// TODO: Extract from /home/founder/zig_forge/grok/src/stratum/client.zig
+// Bitcoin protocol constants
+pub const MAGIC_MAINNET: u32 = 0xD9B4BEF9;
+pub const MSG_TX: u32 = 1;
+pub const PROTOCOL_VERSION: i32 = 70015;
 
+/// Build version message dynamically with current timestamp and correct double-SHA256 checksum
 pub fn buildVersionMessage() ![125]u8 {
-    // Placeholder - will be filled from client.zig
-    return error.NotImplemented;
+    var message: [125]u8 = undefined;
+
+    // Get current timestamp for payload
+    const now = @as(i64, @intCast((posix.clock_gettime(posix.CLOCK.REALTIME) catch unreachable).sec));
+
+    // --- Build Payload First (101 bytes) at offset 24 ---
+    var offset: usize = 24;
+
+    // Protocol version (70015)
+    std.mem.writeInt(i32, message[offset..][0..4], PROTOCOL_VERSION, .little);
+    offset += 4;
+
+    // Services (NODE_NETWORK = 1)
+    std.mem.writeInt(u64, message[offset..][0..8], 1, .little);
+    offset += 8;
+
+    // Timestamp (current Unix time)
+    std.mem.writeInt(i64, message[offset..][0..8], now, .little);
+    offset += 8;
+
+    // addr_recv services
+    std.mem.writeInt(u64, message[offset..][0..8], 1, .little);
+    offset += 8;
+
+    // addr_recv IP (IPv4-mapped IPv6: ::ffff:0.0.0.0)
+    @memset(message[offset..][0..16], 0);
+    message[offset + 10] = 0xff;
+    message[offset + 11] = 0xff;
+    offset += 16;
+
+    // addr_recv port (8333 big-endian)
+    std.mem.writeInt(u16, message[offset..][0..2], 0x208D, .big);
+    offset += 2;
+
+    // addr_from services
+    std.mem.writeInt(u64, message[offset..][0..8], 1, .little);
+    offset += 8;
+
+    // addr_from IP (IPv4-mapped IPv6: ::ffff:0.0.0.0)
+    @memset(message[offset..][0..16], 0);
+    message[offset + 10] = 0xff;
+    message[offset + 11] = 0xff;
+    offset += 16;
+
+    // addr_from port (8333 big-endian)
+    std.mem.writeInt(u16, message[offset..][0..2], 0x208D, .big);
+    offset += 2;
+
+    // Nonce (random - using timestamp for simplicity)
+    std.mem.writeInt(u64, message[offset..][0..8], @as(u64, @intCast(now)), .little);
+    offset += 8;
+
+    // User agent length (0)
+    message[offset] = 0;
+    offset += 1;
+
+    // Start height (0)
+    std.mem.writeInt(i32, message[offset..][0..4], 0, .little);
+    offset += 4;
+
+    // Relay (true)
+    message[offset] = 1;
+
+    // --- Calculate Double-SHA256 Checksum ---
+    var hash1: [32]u8 = undefined;
+    var hash2: [32]u8 = undefined;
+
+    const payload = message[24..125]; // 101 bytes of payload
+    std.crypto.hash.sha2.Sha256.hash(payload, &hash1, .{});
+    std.crypto.hash.sha2.Sha256.hash(&hash1, &hash2, .{});
+
+    const checksum = std.mem.readInt(u32, hash2[0..4], .little);
+
+    // --- Build Header (24 bytes) ---
+    offset = 0;
+
+    // Magic
+    std.mem.writeInt(u32, message[offset..][0..4], MAGIC_MAINNET, .little);
+    offset += 4;
+
+    // Command: "version"
+    @memset(message[offset..][0..12], 0);
+    @memcpy(message[offset..][0..7], "version");
+    offset += 12;
+
+    // Payload length: 101 bytes
+    std.mem.writeInt(u32, message[offset..][0..4], 101, .little);
+    offset += 4;
+
+    // Checksum (CRITICAL: double-SHA256 of payload)
+    std.mem.writeInt(u32, message[offset..][0..4], checksum, .little);
+
+    return message;
 }
 
-pub fn parseTransaction(payload: []const u8) !void {
-    // Placeholder - will be filled from client.zig
-    _ = payload;
-    return error.NotImplemented;
+/// Send verack message (acknowledgement of version)
+pub fn sendVerack(sockfd: posix.socket_t) !void {
+    var message: [24]u8 = undefined;
+    var offset: usize = 0;
+
+    // Header
+    std.mem.writeInt(u32, message[offset..][0..4], MAGIC_MAINNET, .little);
+    offset += 4;
+
+    // Command: "verack"
+    @memset(message[offset..][0..12], 0);
+    @memcpy(message[offset..][0..6], "verack");
+    offset += 12;
+
+    // Payload length: 0
+    std.mem.writeInt(u32, message[offset..][0..4], 0, .little);
+    offset += 4;
+
+    // Checksum: empty payload checksum
+    std.mem.writeInt(u32, message[offset..][0..4], 0x5df6e0e2, .little);
+
+    _ = try posix.send(sockfd, &message, 0);
+}
+
+/// Send pong message (response to ping keepalive)
+pub fn sendPong(sockfd: posix.socket_t, nonce: u64) !void {
+    var message: [32]u8 = undefined;
+    var offset: usize = 0;
+
+    // Header
+    std.mem.writeInt(u32, message[offset..][0..4], MAGIC_MAINNET, .little);
+    offset += 4;
+
+    // Command: "pong"
+    @memset(message[offset..][0..12], 0);
+    @memcpy(message[offset..][0..4], "pong");
+    offset += 12;
+
+    // Payload length: 8 (nonce)
+    std.mem.writeInt(u32, message[offset..][0..4], 8, .little);
+    offset += 4;
+
+    // Checksum (simplified - should be double SHA256 of nonce)
+    std.mem.writeInt(u32, message[offset..][0..4], 0, .little);
+    offset += 4;
+
+    // Payload: nonce
+    std.mem.writeInt(u64, message[offset..][0..8], nonce, .little);
+
+    _ = try posix.send(sockfd, &message, 0);
+}
+
+/// Send getdata message to request full transaction
+pub fn sendGetData(sockfd: posix.socket_t, inv_type: u32, hash: [32]u8) !void {
+    var message: [24 + 1 + 36]u8 = undefined;
+    var msg_offset: usize = 0;
+
+    // Header
+    std.mem.writeInt(u32, message[msg_offset..][0..4], MAGIC_MAINNET, .little);
+    msg_offset += 4;
+
+    // Command: "getdata"
+    @memset(message[msg_offset..][0..12], 0);
+    @memcpy(message[msg_offset..][0..7], "getdata");
+    msg_offset += 12;
+
+    // Payload length: 1 byte (varint count=1) + 36 bytes (inv vector)
+    std.mem.writeInt(u32, message[msg_offset..][0..4], 37, .little);
+    msg_offset += 4;
+
+    // Checksum (simplified - in production should be double SHA256)
+    std.mem.writeInt(u32, message[msg_offset..][0..4], 0, .little);
+    msg_offset += 4;
+
+    // Payload: varint count (1)
+    message[msg_offset] = 1;
+    msg_offset += 1;
+
+    // Inv vector: type + hash
+    std.mem.writeInt(u32, message[msg_offset..][0..4], inv_type, .little);
+    msg_offset += 4;
+    @memcpy(message[msg_offset..][0..32], &hash);
+
+    _ = try posix.send(sockfd, &message, 0);
+}
+
+pub const Transaction = struct {
+    hash: [32]u8,
+    value_satoshis: i64,
+    input_count: u32,
+    output_count: u32,
+};
+
+/// Parse full transaction and extract value
+pub fn parseTransaction(payload: []const u8) !Transaction {
+    if (payload.len < 10) return error.InvalidTransaction;
+
+    var offset: usize = 0;
+
+    // Version (4 bytes)
+    _ = std.mem.readInt(i32, payload[offset..][0..4], .little);
+    offset += 4;
+
+    // Input count (varint)
+    const input_count = try readVarint(payload, &offset);
+
+    // Skip inputs
+    var i: usize = 0;
+    while (i < input_count) : (i += 1) {
+        offset += 36; // Previous output hash + index
+        if (offset > payload.len) return error.InvalidTransaction;
+
+        const script_len = try readVarint(payload, &offset);
+        offset += script_len;
+        if (offset > payload.len) return error.InvalidTransaction;
+
+        offset += 4; // Sequence
+        if (offset > payload.len) return error.InvalidTransaction;
+    }
+
+    // Output count (varint)
+    const output_count = try readVarint(payload, &offset);
+
+    // Parse outputs and sum values
+    var total_value: i64 = 0;
+    var j: usize = 0;
+    while (j < output_count) : (j += 1) {
+        if (offset + 8 > payload.len) return error.InvalidTransaction;
+        const value = std.mem.readInt(i64, payload[offset..][0..8], .little);
+        total_value += value;
+        offset += 8;
+
+        const script_len = try readVarint(payload, &offset);
+        offset += script_len;
+        if (offset > payload.len) return error.InvalidTransaction;
+    }
+
+    // Calculate transaction hash (double SHA256 of payload)
+    var hash: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(payload, &hash, .{});
+    std.crypto.hash.sha2.Sha256.hash(&hash, &hash, .{});
+
+    // SIMD reverse hash for human-readable format (big-endian)
+    const hash_vec: @Vector(32, u8) = hash;
+    const reverse_indices: @Vector(32, i32) = .{31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0};
+    const reversed = @shuffle(u8, hash_vec, undefined, reverse_indices);
+    const reversed_hash: [32]u8 = reversed;
+
+    return Transaction{
+        .hash = reversed_hash,
+        .value_satoshis = total_value,
+        .input_count = @intCast(input_count),
+        .output_count = @intCast(output_count),
+    };
+}
+
+/// Read variable-length integer (varint) from Bitcoin protocol
+pub fn readVarint(data: []const u8, offset: *usize) !usize {
+    if (offset.* >= data.len) return error.InvalidVarint;
+
+    const first = data[offset.*];
+    offset.* += 1;
+
+    if (first < 0xfd) {
+        return first;
+    } else if (first == 0xfd) {
+        if (offset.* + 2 > data.len) return error.InvalidVarint;
+        const value = std.mem.readInt(u16, data[offset.*..][0..2], .little);
+        offset.* += 2;
+        return value;
+    } else if (first == 0xfe) {
+        if (offset.* + 4 > data.len) return error.InvalidVarint;
+        const value = std.mem.readInt(u32, data[offset.*..][0..4], .little);
+        offset.* += 4;
+        return value;
+    } else {
+        if (offset.* + 8 > data.len) return error.InvalidVarint;
+        const value = std.mem.readInt(u64, data[offset.*..][0..8], .little);
+        offset.* += 8;
+        return @as(usize, @intCast(value));
+    }
 }

@@ -149,22 +149,147 @@ pub const Sniffer = struct {
     fn runSniffer(self: *Sniffer) !void {
         self.notifyStatus(.connecting, "Connecting to Bitcoin node...");
 
-        // TODO: Implement full Bitcoin protocol here
-        // For now, this is a placeholder that will be filled in
-        // with the actual implementation from client.zig
+        // Parse IP address from string to [4]u8
+        var ip_parts: [4]u8 = undefined;
+        var iter = std.mem.splitScalar(u8, self.node_ip, '.');
+        var idx: usize = 0;
+        while (iter.next()) |part| : (idx += 1) {
+            if (idx >= 4) return error.InvalidIPAddress;
+            ip_parts[idx] = std.fmt.parseInt(u8, part, 10) catch return error.InvalidIPAddress;
+        }
+        if (idx != 4) return error.InvalidIPAddress;
 
-        // This will include:
-        // 1. Socket connection
-        // 2. Version handshake
-        // 3. io_uring setup
-        // 4. Message parsing loop
-        // 5. Transaction detection and callback invocation
+        // Create socket
+        const sockfd = try posix.socket(posix.AF.INET, posix.SOCK.STREAM, posix.IPPROTO.TCP);
+        defer posix.close(sockfd);
 
-        posix.nanosleep(2, 0);
+        // Setup address
+        var addr: posix.sockaddr.in = undefined;
+        addr.family = posix.AF.INET;
+        addr.port = std.mem.nativeToBig(u16, self.port);
+        addr.addr = std.mem.nativeToBig(u32, (@as(u32, ip_parts[0]) << 24) | (@as(u32, ip_parts[1]) << 16) | (@as(u32, ip_parts[2]) << 8) | ip_parts[3]);
+
+        // Connect to node
+        try posix.connect(sockfd, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
         self.notifyStatus(.connected, "Connected to Bitcoin node");
 
+        // Build and send version message
+        const version_msg = try bitcoin.buildVersionMessage();
+        _ = try posix.send(sockfd, &version_msg, 0);
+
+        // Setup io_uring
+        var ring = try IoUring.init(64, 0);
+        defer ring.deinit();
+
+        self.notifyStatus(.handshake_complete, "Handshake initiated");
+
+        // Buffer for receiving data
+        var buffer: [4096]u8 align(64) = undefined;
+
         while (self.running.load(.acquire)) {
-            posix.nanosleep(0, 100 * std.time.ns_per_ms);
+            // Submit recv request
+            const sqe = try ring.get_sqe();
+            sqe.prep_recv(sockfd, &buffer, 0);
+            sqe.user_data = 0;
+
+            // Submit and wait
+            _ = try ring.submit_and_wait(1);
+
+            // Wait for completion
+            var cqe = try ring.copy_cqe();
+            defer ring.cqe_seen(&cqe);
+
+            const bytes_read = @as(usize, @intCast(cqe.res));
+            if (bytes_read <= 0) break;
+
+            // Process received data
+            var offset: usize = 0;
+            while (offset + 24 <= bytes_read) {
+                // Parse header
+                const magic = std.mem.readInt(u32, buffer[offset..][0..4], .little);
+                offset += 4;
+
+                var command_buf: [12]u8 = undefined;
+                @memcpy(&command_buf, buffer[offset..][0..12]);
+                offset += 12;
+
+                // Extract command string
+                var command_str: []const u8 = &command_buf;
+                if (std.mem.indexOfScalar(u8, &command_buf, 0)) |null_pos| {
+                    command_str = command_buf[0..null_pos];
+                }
+
+                const length = std.mem.readInt(u32, buffer[offset..][0..4], .little);
+                offset += 4;
+
+                _ = std.mem.readInt(u32, buffer[offset..][0..4], .little); // checksum
+                offset += 4;
+
+                // Verify magic
+                if (magic != MAGIC_MAINNET) continue;
+
+                // Check if we have full payload
+                if (offset + length > bytes_read) break;
+
+                // Handle version - respond with verack
+                if (std.mem.eql(u8, command_str, "version")) {
+                    try bitcoin.sendVerack(sockfd);
+                }
+
+                // Handle verack
+                if (std.mem.eql(u8, command_str, "verack")) {
+                    self.notifyStatus(.handshake_complete, "Handshake complete - listening for transactions");
+                }
+
+                // Handle ping - respond with pong
+                if (std.mem.eql(u8, command_str, "ping")) {
+                    if (length >= 8) {
+                        const nonce = std.mem.readInt(u64, buffer[offset..][0..8], .little);
+                        try bitcoin.sendPong(sockfd, nonce);
+                    }
+                }
+
+                // Handle tx - parse and invoke callback
+                if (std.mem.eql(u8, command_str, "tx")) {
+                    const tx = bitcoin.parseTransaction(buffer[offset..][0..length]) catch {
+                        offset += length;
+                        continue;
+                    };
+
+                    // Convert to C FFI type and invoke callback
+                    const c_tx = MS_Transaction{
+                        .hash = MS_TxHash{ .bytes = tx.hash },
+                        .value_satoshis = tx.value_satoshis,
+                        .input_count = tx.input_count,
+                        .output_count = tx.output_count,
+                        .is_whale = if (tx.value_satoshis >= WHALE_THRESHOLD) 1 else 0,
+                    };
+                    self.notifyTransaction(&c_tx);
+                }
+
+                // Handle inv - request full transaction via getdata
+                if (std.mem.eql(u8, command_str, "inv")) {
+                    var payload_offset: usize = 0;
+                    const inv_count = std.mem.readInt(u32, buffer[offset + payload_offset..][0..4], .little);
+                    payload_offset += 4;
+
+                    var i: u32 = 0;
+                    while (i < inv_count and payload_offset + 36 <= length) : (i += 1) {
+                        const inv_type = std.mem.readInt(u32, buffer[offset + payload_offset..][0..4], .little);
+                        payload_offset += 4;
+
+                        if (inv_type == MSG_TX) {
+                            var hash: [32]u8 = undefined;
+                            @memcpy(&hash, buffer[offset + payload_offset..][0..32]);
+                            try bitcoin.sendGetData(sockfd, MSG_TX, hash);
+                        }
+
+                        payload_offset += 32;
+                    }
+                }
+
+                offset += length;
+            }
         }
     }
 };
