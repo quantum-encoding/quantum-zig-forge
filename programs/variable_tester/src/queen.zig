@@ -44,6 +44,8 @@ pub const QueenConfig = struct {
     max_workers: usize = 1024,
     chunk_size: u32 = protocol.DEFAULT_CHUNK_SIZE,
     test_fn_id: protocol.TestFnId = .lossless_compression,
+    /// Path to the test library (.so) that workers should load
+    test_lib_path: []const u8 = "./zig-out/lib/libtest_compression.so",
 };
 
 /// The Queen coordinator
