@@ -37,8 +37,8 @@ pub const TestFn = *const fn (task: *const Task, allocator: std.mem.Allocator) a
 /// WorkerContext holds per-worker state
 pub const WorkerContext = struct {
     id: usize,
-    task_queue: *spsc.Queue(Task),
-    result_queue: *spsc.Queue(Result),
+    task_queue: *spsc.SpscQueue(Task),
+    result_queue: *spsc.SpscQueue(Result),
     test_fn: TestFn,
     allocator: std.mem.Allocator,
     running: *std.atomic.Value(bool),
