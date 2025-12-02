@@ -187,7 +187,7 @@ pub const Queen = struct {
             var client_addr: posix.sockaddr.in = undefined;
             var addr_len: posix.socklen_t = @sizeOf(@TypeOf(client_addr));
 
-            const client_fd = posix.accept(self.listen_fd, @ptrCast(&client_addr), &addr_len) catch |err| {
+            const client_fd = posix.accept(self.listen_fd, @ptrCast(&client_addr), &addr_len, 0) catch |err| {
                 if (err == error.WouldBlock) continue;
                 std.debug.print("👑 Accept error: {}\n", .{err});
                 continue;
