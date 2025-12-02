@@ -62,7 +62,7 @@ pub const Queen = struct {
 
     // Results
     results_found: std.atomic.Value(u64),
-    best_score: std.atomic.Value(f64),
+    best_score: f64,
     mutex: std.Thread.Mutex,
 
     pub fn init(allocator: std.mem.Allocator, config: QueenConfig) !*Queen {
