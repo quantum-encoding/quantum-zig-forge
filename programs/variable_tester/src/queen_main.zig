@@ -69,6 +69,10 @@ pub fn main() !void {
                     config.test_fn_id = .math_formula;
                 }
             }
+        } else if (std.mem.eql(u8, arg, "--lib")) {
+            if (args.next()) |lib_path| {
+                config.test_lib_path = lib_path;
+            }
         }
     }
 
