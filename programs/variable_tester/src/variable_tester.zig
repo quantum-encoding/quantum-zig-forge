@@ -113,8 +113,8 @@ pub fn workerThread(ctx: *WorkerContext) void {
 /// VariableTester orchestrates the brute-force testing engine
 pub const VariableTester = struct {
     allocator: std.mem.Allocator,
-    task_queue: spsc.Queue(Task),
-    result_queue: spsc.Queue(Result),
+    task_queue: spsc.SpscQueue(Task),
+    result_queue: spsc.SpscQueue(Result),
     workers: []std.Thread,
     worker_contexts: []WorkerContext,
     running: std.atomic.Value(bool),
