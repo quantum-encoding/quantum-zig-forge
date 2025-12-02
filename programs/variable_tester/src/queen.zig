@@ -141,7 +141,7 @@ pub const Queen = struct {
             if (line) |l| {
                 if (l.len > 0) {
                     const task = try self.allocator.dupe(u8, l);
-                    try self.tasks.append(task);
+                    try self.tasks.append(self.allocator, task);
                 }
             } else break;
         } else |_| {}
