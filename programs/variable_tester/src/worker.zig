@@ -199,21 +199,85 @@ pub const Worker = struct {
     pub fn start(self: *Worker) !void {
         if (self.running.load(.acquire)) return error.AlreadyRunning;
         self.running.store(true, .release);
+        self.pool_running.store(true, .release);
 
         self.start_time = (posix.clock_gettime(.REALTIME) catch unreachable).sec;
+
+        // Spawn thread pool for parallel task execution
+        const threads = try self.allocator.alloc(std.Thread, self.num_threads);
+        self.pool_threads = threads;
+
+        for (0..self.num_threads) |i| {
+            threads[i] = try std.Thread.spawn(.{}, workerThreadLoop, .{self});
+        }
+
+        std.debug.print("🐝 Started {} worker threads\n", .{self.num_threads});
 
         // Spawn heartbeat thread
         _ = try std.Thread.spawn(.{}, heartbeatLoop, .{self});
 
-        // Main work loop
+        // Main work loop (receives chunks and distributes to thread pool)
         self.workLoop();
+
+        // Wait for all pending tasks to complete
+        while (self.pending_tasks.load(.acquire) > 0) {
+            posix.nanosleep(0, 1_000_000); // 1ms
+        }
+
+        // Signal pool threads to stop and wait for them
+        self.pool_running.store(false, .release);
+        for (threads) |thread| {
+            thread.join();
+        }
     }
 
     /// Stop the worker
     pub fn stop(self: *Worker) void {
         if (self.running.load(.acquire)) {
             self.running.store(false, .release);
+            self.pool_running.store(false, .release);
             posix.close(self.sockfd);
+        }
+    }
+
+    /// Worker thread loop - pulls tasks from queue and executes them
+    fn workerThreadLoop(self: *Worker) void {
+        while (self.pool_running.load(.acquire)) {
+            if (self.task_queue) |queue| {
+                if (queue.pop()) |task| {
+                    self.executeTask(task);
+                    _ = self.pending_tasks.fetchSub(1, .release);
+                } else {
+                    // No work available, brief spin wait
+                    std.atomic.spinLoopHint();
+                }
+            } else break;
+        }
+    }
+
+    /// Execute a single task (called by worker threads)
+    fn executeTask(self: *Worker, task: TaskItem) void {
+        const test_fn = getTestFunction(@enumFromInt(task.test_fn_id));
+        const vt_task = variable_tester.Task.init(task.task_id, task.data);
+
+        if (test_fn(&vt_task, self.allocator)) |result| {
+            _ = self.tasks_processed.fetchAdd(1, .monotonic);
+
+            if (result.success) {
+                _ = self.tasks_succeeded.fetchAdd(1, .monotonic);
+
+                // Report result to Queen (mutex protected)
+                self.result_mutex.lock();
+                defer self.result_mutex.unlock();
+                self.reportResult(task.task_id, result) catch {};
+            }
+
+            // Free result data if allocated
+            if (result.data.len > 0 and result.data.ptr != task.data.ptr) {
+                self.allocator.free(result.data);
+            }
+        } else |_| {
+            _ = self.tasks_processed.fetchAdd(1, .monotonic);
         }
     }
 
