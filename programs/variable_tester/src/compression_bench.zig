@@ -590,14 +590,14 @@ const Huffman = struct {
 
         // Pack bits into bytes using 64-bit buffer for safety
         var bit_buffer: u64 = 0;
-        var bits_in_buffer: u6 = 0;
+        var bits_in_buffer: u8 = 0;
 
         for (input) |c| {
             const sym_code = codes[c];
-            const sym_len: u6 = @intCast(code_len[c]);
+            const sym_len: u8 = code_len[c];
 
             // Add code bits to buffer (MSB first)
-            const shift_amt: u6 = 64 - bits_in_buffer - sym_len;
+            const shift_amt: u6 = @intCast(64 - bits_in_buffer - sym_len);
             bit_buffer |= @as(u64, sym_code) << shift_amt;
             bits_in_buffer += sym_len;
 
