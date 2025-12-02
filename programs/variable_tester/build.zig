@@ -13,15 +13,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // Main executable
-    const exe = b.addExecutable(.{
-        .name = "variable-tester",
+    // Main module
+    const main_module = b.addModule("main", .{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+    main_module.addImport("lockfree_queue", lockfree_module);
 
-    exe.root_module.addImport("lockfree_queue", lockfree_module);
+    // Main executable
+    const exe = b.addExecutable(.{
+        .name = "variable-tester",
+        .root_module = main_module,
+    });
     b.installArtifact(exe);
 
     // Run command
@@ -35,15 +39,19 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the variable tester");
     run_step.dependOn(&run_cmd.step);
 
-    // Benchmark executable
-    const bench = b.addExecutable(.{
-        .name = "variable-tester-bench",
+    // Benchmark module
+    const bench_module = b.addModule("bench", .{
         .root_source_file = b.path("benchmarks/bench.zig"),
         .target = target,
         .optimize = .ReleaseFast,
     });
+    bench_module.addImport("lockfree_queue", lockfree_module);
 
-    bench.root_module.addImport("lockfree_queue", lockfree_module);
+    // Benchmark executable
+    const bench = b.addExecutable(.{
+        .name = "variable-tester-bench",
+        .root_module = bench_module,
+    });
     b.installArtifact(bench);
 
     const bench_cmd = b.addRunArtifact(bench);
