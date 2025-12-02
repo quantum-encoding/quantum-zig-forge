@@ -61,6 +61,19 @@ typedef struct HFT_Engine HFT_Engine;
  * ============================================================================ */
 
 /**
+ * Executor type for order execution.
+ *
+ * PAPER: Paper trading mode - logs orders but doesn't execute (default)
+ * ZMQ:   ZeroMQ to Go Trade Executor (requires running broker)
+ * NONE:  No execution - signal generation only
+ */
+typedef enum {
+    HFT_EXECUTOR_PAPER = 0,  /* Paper trading (no real orders, just logging) */
+    HFT_EXECUTOR_ZMQ = 1,    /* ZeroMQ to Go Trade Executor */
+    HFT_EXECUTOR_NONE = 2,   /* No execution (signal generation only) */
+} HFT_ExecutorType;
+
+/**
  * Engine configuration parameters.
  *
  * All rate limits are per-second.
@@ -79,6 +92,9 @@ typedef struct {
     __int128 max_spread_value;       /* Max spread in fixed-point (µ units) */
     __int128 min_edge_value;         /* Min edge in fixed-point (µ units) */
     uint32_t tick_window;            /* Tick window for strategy */
+
+    /* Executor selection */
+    HFT_ExecutorType executor_type;  /* Trade execution venue */
 } HFT_Config;
 
 /* ============================================================================

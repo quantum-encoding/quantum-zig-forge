@@ -2,13 +2,15 @@ const std = @import("std");
 const Decimal = @import("decimal.zig").Decimal;
 const order_book = @import("order_book_v2.zig");
 const pool_lib = @import("simple_pool.zig");
-const OrderSender = @import("order_sender.zig").OrderSender;
+const execution = @import("execution.zig");
 const StrategyConfig = @import("strategy_config.zig").StrategyConfig;
 const RunawayProtection = @import("runaway_protection.zig").RunawayProtection;
 
 const OrderBook = order_book.OrderBook;
 const Side = order_book.Side;
 const OrderType = order_book.OrderType;
+const TradeExecutor = execution.TradeExecutor;
+const Order = execution.Order;
 
 /// Market data update (tick)
 pub const MarketTick = struct {
@@ -113,7 +115,7 @@ pub const HFTSystem = struct {
     strategies: std.ArrayListAligned(Strategy, null),
     tick_pool: pool_lib.SimplePool(MarketTick),
     signal_pool: pool_lib.SimplePool(Signal),
-    order_sender: ?OrderSender,  // Connection to Trade Executor
+    executor: ?TradeExecutor,  // Pluggable trade executor (ZMQ, Paper, etc.)
 
     // Performance metrics
     metrics: SystemMetrics,
@@ -170,14 +172,9 @@ pub const HFTSystem = struct {
         }
     };
     
-    pub fn init(allocator: std.mem.Allocator, config: SystemConfig) !Self {
-        // Try to connect to Trade Executor
-        const order_sender = OrderSender.init() catch |err| blk: {
-            std.debug.print("⚠️ Order sender not connected: {any}\n", .{err});
-            std.debug.print("   Orders will be simulated locally only\n", .{});
-            break :blk null;
-        };
-
+    /// Initialize HFT system with a pluggable executor
+    /// Pass null executor for signal-only mode (no order execution)
+    pub fn init(allocator: std.mem.Allocator, config: SystemConfig, executor: ?TradeExecutor) !Self {
         return .{
             .order_books = std.StringHashMap(*OrderBook).init(allocator),
             .strategies = std.ArrayListAligned(Strategy, null){
@@ -186,17 +183,17 @@ pub const HFTSystem = struct {
             },
             .tick_pool = try pool_lib.SimplePool(MarketTick).init(allocator, config.strategy_config.tick_pool_size),
             .signal_pool = try pool_lib.SimplePool(Signal).init(allocator, config.strategy_config.signal_pool_size),
-            .order_sender = order_sender,
+            .executor = executor,
             .metrics = SystemMetrics.init(),
             .allocator = allocator,
             .config = config,
         };
     }
-    
+
     pub fn deinit(self: *Self) void {
-        // Clean up order sender if connected
-        if (self.order_sender) |*sender| {
-            sender.deinit();
+        // Clean up executor if present
+        if (self.executor) |exec| {
+            exec.deinit();
         }
 
         var iter = self.order_books.iterator();
@@ -254,26 +251,22 @@ pub const HFTSystem = struct {
         // Get or create order book
         const book = try self.getOrCreateOrderBook(signal.symbol);
 
-        // Send order to Trade Executor if connected
-        if (self.order_sender) |*sender| {
-            const price_float = signal.target_price.toFloat();
-            const qty_float = signal.quantity.toFloat();
+        // Send order via executor if available
+        if (self.executor) |exec| {
+            if (signal.action == .hold) return;
 
-            switch (signal.action) {
-                .buy => {
-                    // Send real order via ZeroMQ to Go Trade Executor
-                    sender.limitBuy(signal.symbol, qty_float, price_float) catch |err| {
-                        std.debug.print("⚠️ Failed to send buy order: {any}\n", .{err});
-                    };
-                },
-                .sell => {
-                    // Send real order via ZeroMQ to Go Trade Executor
-                    sender.limitSell(signal.symbol, qty_float, price_float) catch |err| {
-                        std.debug.print("⚠️ Failed to send sell order: {any}\n", .{err});
-                    };
-                },
-                .hold => return,
-            }
+            const order = Order.init(
+                signal.symbol,
+                if (signal.action == .buy) Order.Side.buy else Order.Side.sell,
+                Order.OrderType.limit,
+                signal.quantity,
+                signal.target_price,
+            );
+
+            _ = exec.sendOrder(order) catch |err| {
+                std.debug.print("⚠️ Failed to send order: {any}\n", .{err});
+            };
+            self.metrics.orders_sent += 1;
         }
 
         // Also track locally in order book
@@ -323,10 +316,13 @@ pub const HFTSystem = struct {
         if (self.order_books.get(symbol)) |book| {
             return book;
         }
-        
+
+        // Dupe the symbol to ensure we own the key memory (FFI may reuse buffer)
+        const owned_symbol = try self.allocator.dupe(u8, symbol);
+
         const book = try self.allocator.create(OrderBook);
-        book.* = OrderBook.init(self.allocator, symbol);
-        try self.order_books.put(symbol, book);
+        book.* = OrderBook.init(self.allocator, owned_symbol);
+        try self.order_books.put(owned_symbol, book);
         return book;
     }
     

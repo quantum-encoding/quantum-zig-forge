@@ -21,6 +21,7 @@ const Decimal = @import("decimal.zig").Decimal;
 const hft_system = @import("hft_system.zig");
 const order_book = @import("order_book_v2.zig");
 const network = @import("network.zig");
+const execution = @import("execution.zig");
 const StrategyConfig = @import("strategy_config.zig").StrategyConfig;
 
 // ============================================================================
@@ -29,6 +30,13 @@ const StrategyConfig = @import("strategy_config.zig").StrategyConfig;
 
 /// Opaque engine handle
 pub const HFT_Engine = opaque {};
+
+/// Executor type for order execution
+pub const HFT_ExecutorType = enum(c_int) {
+    PAPER = 0,      // Paper trading (no real orders, just logging)
+    ZMQ = 1,        // ZeroMQ to Go Trade Executor
+    NONE = 2,       // No execution (signal generation only)
+};
 
 /// Configuration for engine creation
 pub const HFT_Config = extern struct {
@@ -43,6 +51,9 @@ pub const HFT_Config = extern struct {
     max_spread_value: i128,
     min_edge_value: i128,
     tick_window: u32,
+
+    /// Executor selection
+    executor_type: HFT_ExecutorType,
 };
 
 /// Error codes
@@ -104,18 +115,55 @@ const EngineContext = struct {
     hft_system: *hft_system.HFTSystem,
     signal_queue: network.LockFreeQueue(HFT_Signal, 1024),
 
+    // Executor storage - only one will be active based on executor_type
+    paper_executor: ?*execution.PaperTradingExecutor,
+    null_executor: ?*execution.NullExecutor,
+    executor_type: HFT_ExecutorType,
+
     fn init(config: *const HFT_Config) !*EngineContext {
-        // Create context - use page allocator for initial allocation
-        // since we need to bootstrap the GPA
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        const bootstrap_allocator = gpa.allocator();
+        // Use page allocator for the context itself - this is the root allocation
+        // that contains the embedded GPA. All other allocations go through the GPA.
+        const page_alloc = std.heap.page_allocator;
 
-        const ctx = try bootstrap_allocator.create(EngineContext);
-        errdefer bootstrap_allocator.destroy(ctx);
+        const ctx = try page_alloc.create(EngineContext);
+        errdefer page_alloc.destroy(ctx);
 
-        // Copy GPA to heap and get allocator from the HEAP copy
-        ctx.gpa = gpa;
-        ctx.allocator = ctx.gpa.allocator();  // Get allocator from ctx.gpa, NOT stack gpa
+        // Initialize the embedded GPA and get its allocator
+        ctx.gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        ctx.allocator = ctx.gpa.allocator();
+
+        // Initialize executor storage to null
+        ctx.paper_executor = null;
+        ctx.null_executor = null;
+        ctx.executor_type = config.executor_type;
+
+        // Create the appropriate executor based on config
+        var executor_trait: ?execution.TradeExecutor = null;
+
+        switch (config.executor_type) {
+            .PAPER => {
+                const paper = try ctx.allocator.create(execution.PaperTradingExecutor);
+                paper.* = execution.PaperTradingExecutor.init(ctx.allocator, config.enable_logging);
+                ctx.paper_executor = paper;
+                executor_trait = paper.executor();
+            },
+            .ZMQ => {
+                // ZMQ executor requires external broker - skip for now
+                // In production, caller should ensure ZMQ broker is running
+                // For now, fall back to paper trading with a warning
+                std.debug.print("[FFI] Warning: ZMQ executor requested but not available, using Paper\n", .{});
+                const paper = try ctx.allocator.create(execution.PaperTradingExecutor);
+                paper.* = execution.PaperTradingExecutor.init(ctx.allocator, true);
+                ctx.paper_executor = paper;
+                executor_trait = paper.executor();
+            },
+            .NONE => {
+                const null_exec = try ctx.allocator.create(execution.NullExecutor);
+                null_exec.* = execution.NullExecutor.init();
+                ctx.null_executor = null_exec;
+                executor_trait = null_exec.executor();
+            },
+        }
 
         // Create strategy config with defaults
         // Convert i128 fixed-point values to f64 (value is in millionths)
@@ -145,11 +193,11 @@ const EngineContext = struct {
             .strategy_config = strategy_config,
         };
 
-        // Initialize HFT system
+        // Initialize HFT system with executor
         ctx.hft_system = try ctx.allocator.create(hft_system.HFTSystem);
         errdefer ctx.allocator.destroy(ctx.hft_system);
 
-        ctx.hft_system.* = try hft_system.HFTSystem.init(ctx.allocator, sys_config);
+        ctx.hft_system.* = try hft_system.HFTSystem.init(ctx.allocator, sys_config, executor_trait);
         errdefer ctx.hft_system.deinit();
 
         // Add default strategy
@@ -172,11 +220,22 @@ const EngineContext = struct {
         ctx.hft_system.deinit();
         ctx.allocator.destroy(ctx.hft_system);
 
-        const allocator = ctx.allocator;
-        const should_deinit = ctx.gpa.deinit();
-        _ = should_deinit; // Check for leaks in debug builds
+        // Clean up executor
+        if (ctx.paper_executor) |paper| {
+            paper.deinit();
+            ctx.allocator.destroy(paper);
+        }
+        if (ctx.null_executor) |null_exec| {
+            null_exec.deinit();
+            ctx.allocator.destroy(null_exec);
+        }
 
-        allocator.destroy(ctx);
+        // Deinit the embedded GPA (checks for leaks in debug builds)
+        const should_deinit = ctx.gpa.deinit();
+        _ = should_deinit;
+
+        // Free the context using page allocator (matches allocation in init)
+        std.heap.page_allocator.destroy(ctx);
     }
 };
 
@@ -321,6 +380,7 @@ export fn hft_init() callconv(.c) i32 {
         .max_spread_value = Decimal.fromFloat(0.50).value,
         .min_edge_value = Decimal.fromFloat(0.05).value,
         .tick_window = 100,
+        .executor_type = .PAPER,  // Default to paper trading for legacy API
     };
 
     var err: HFT_Error = undefined;
