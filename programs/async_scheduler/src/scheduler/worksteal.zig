@@ -134,13 +134,16 @@ pub const Scheduler = struct {
                 c.allocator.destroy(c);
             }
         }.wrapper;
-        // Register task
-        self.task_map_mutex.lock();
-        defer self.task_map_mutex.unlock();
-        try self.task_map.put(task_id, entry);
+        // Register task in map
+        {
+            self.task_map_mutex.lock();
+            defer self.task_map_mutex.unlock();
+            try self.task_map.put(task_id, entry);
+        }
         // Push to queue and wake workers while holding work_mutex
         // This ensures workers that wake up will definitely see the new task
         // (they re-check queues after waking while still holding the lock)
+        // NOTE: We release task_map_mutex first to avoid lock ordering issues
         const thread_id = task_id % self.thread_count;
         self.work_mutex.lock();
         try self.work_queues[thread_id].push(entry);
