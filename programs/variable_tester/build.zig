@@ -173,4 +173,26 @@ pub fn build(b: *std.Build) void {
 
     const sat_step = b.step("saturation", "Run saturation benchmark");
     sat_step.dependOn(&sat_cmd.step);
+
+    // ==================== Crypto Benchmark executable ====================
+    const crypto_module = b.addModule("crypto_bench", .{
+        .root_source_file = b.path("src/crypto_bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+
+    const crypto_exe = b.addExecutable(.{
+        .name = "crypto-bench",
+        .root_module = crypto_module,
+    });
+    b.installArtifact(crypto_exe);
+
+    const crypto_cmd = b.addRunArtifact(crypto_exe);
+    crypto_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        crypto_cmd.addArgs(args);
+    }
+
+    const crypto_step = b.step("crypto", "Run crypto brute-force benchmark");
+    crypto_step.dependOn(&crypto_cmd.step);
 }
