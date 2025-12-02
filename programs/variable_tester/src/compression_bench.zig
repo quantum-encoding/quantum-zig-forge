@@ -458,7 +458,7 @@ const Huffman = struct {
             (@as(usize, input[259]) << 24);
 
         // For stub: just copy back
-        var output = try allocator.alloc(u8, orig_len);
+        const output = try allocator.alloc(u8, orig_len);
         @memcpy(output, input[260..][0..orig_len]);
 
         return output;
