@@ -1342,7 +1342,7 @@ pub fn main() !void {
             });
             last_completed = current;
         }
-        std.Thread.sleep(10_000_000); // 10ms
+        posix.nanosleep(0, 10_000_000); // 10ms
     }
     std.debug.print("\r  Progress: {}/{} formulas (100.0%)   \n", .{ formula_count, formula_count });
 
