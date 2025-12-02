@@ -9,7 +9,7 @@ const std = @import("std");
 const posix = std.posix;
 const Worker = @import("worker.zig").Worker;
 const WorkerConfig = @import("worker.zig").WorkerConfig;
-const protocol = @import("protocol.zig");
+const protocol = @import("protocol");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
