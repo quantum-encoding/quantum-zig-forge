@@ -356,7 +356,7 @@ pub fn main() !void {
         var i = range_start.?;
         while (i < range_end.?) : (i += 1) {
             const task = try std.fmt.allocPrint(allocator, "{}", .{i});
-            try tasks.append(task);
+            try tasks.append(allocator, task);
         }
     } else {
         std.debug.print("Error: Must specify --file <path> or --range <start> <end>\n", .{});
