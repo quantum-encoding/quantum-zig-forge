@@ -143,13 +143,14 @@ pub const Scheduler = struct {
             defer self.task_map_mutex.unlock();
             try self.task_map.put(task_id, entry);
         }
-        // Push to queue and wake workers while holding work_mutex
-        // This ensures workers that wake up will definitely see the new task
-        // (they re-check queues after waking while still holding the lock)
-        // NOTE: We release task_map_mutex first to avoid lock ordering issues
+        // Push to queue first (lock-free)
         const thread_id = task_id % self.thread_count;
-        self.work_mutex.lock();
         try self.work_queues[thread_id].push(entry);
+        // Increment pending counter and wake workers
+        // Order: push to queue THEN increment counter THEN broadcast
+        // Workers check counter first, so they'll see the task
+        _ = self.pending_tasks.fetchAdd(1, .release);
+        self.work_mutex.lock();
         self.work_cond.broadcast();
         self.work_mutex.unlock();
         return TaskHandle{ .id = task_id, .scheduler = self };
