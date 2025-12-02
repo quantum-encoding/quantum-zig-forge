@@ -1,10 +1,11 @@
 //! Queen - Brute-Force Swarm Coordinator
 //!
 //! Usage: queen [options]
-//!   --port <port>     Listen port (default: 7777)
-//!   --start <number>  Starting number for task range (default: 0)
-//!   --end <number>    Ending number for task range (default: 10000)
-//!   --test <name>     Test function: compression, prime, hash, numeric_match
+//!   --port <port>       Listen port (default: 7777)
+//!   --start <number>    Starting number for task range (default: 0)
+//!   --end <number>      Ending number for task range (default: 10000000)
+//!   --chunk <size>      Tasks per chunk dispatched to workers (default: 1000)
+//!   --test <name>       Test function: compression, prime, hash, numeric_match
 
 const std = @import("std");
 const posix = std.posix;
