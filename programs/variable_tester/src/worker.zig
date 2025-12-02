@@ -145,6 +145,14 @@ pub const Worker = struct {
     pub fn deinit(self: *Worker) void {
         self.stop();
 
+        // Unload test library
+        if (self.test_lib) |*lib| {
+            lib.unload();
+        }
+        if (self.test_lib_path) |path| {
+            self.allocator.free(path);
+        }
+
         // Clean up thread pool
         if (self.pool_threads) |threads| {
             self.allocator.free(threads);
