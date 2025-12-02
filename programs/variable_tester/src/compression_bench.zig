@@ -376,8 +376,8 @@ pub fn main() !void {
     std.debug.print("\n", .{});
 
     // Process each formula
-    var results = std.ArrayList(FormulaResult).init(allocator);
-    defer results.deinit();
+    var results = std.ArrayListUnmanaged(FormulaResult){};
+    defer results.deinit(allocator);
 
     var successful: usize = 0;
     var lossless_count: usize = 0;
