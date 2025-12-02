@@ -1,6 +1,6 @@
 const std = @import("std");
-const variable_tester = @import("../src/variable_tester.zig");
-const test_functions = @import("../src/test_functions.zig");
+const variable_tester = @import("variable_tester");
+const test_functions = @import("test_functions");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
