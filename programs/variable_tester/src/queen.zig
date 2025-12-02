@@ -233,12 +233,23 @@ pub const Queen = struct {
         // Use configured chunk_size directly for precise control during benchmarking
         const chunk_size = self.config.chunk_size;
 
-        // Send welcome
-        const welcome = protocol.QueenWelcome.init(worker_id, chunk_size);
-        protocol.Net.sendStruct(sockfd, .queen_welcome, welcome) catch |err| {
+        // Send welcome with test library path
+        const lib_path = self.config.test_lib_path;
+        const welcome = protocol.QueenWelcome.init(worker_id, chunk_size, @intCast(lib_path.len));
+
+        // Build welcome payload: QueenWelcome struct + library path
+        var welcome_payload: [512]u8 = undefined;
+        const welcome_bytes = std.mem.asBytes(&welcome);
+        @memcpy(welcome_payload[0..welcome_bytes.len], welcome_bytes);
+        @memcpy(welcome_payload[welcome_bytes.len..][0..lib_path.len], lib_path);
+        const total_len = welcome_bytes.len + lib_path.len;
+
+        protocol.Net.sendMessage(sockfd, .queen_welcome, welcome_payload[0..total_len]) catch |err| {
             std.debug.print("👑 Failed to send welcome: {}\n", .{err});
             return;
         };
+
+        std.debug.print("👑 Sent test library path: {s}\n", .{lib_path});
 
         // Register worker
         const worker = WorkerState.init(worker_id, sockfd, hello.cpu_cores);
