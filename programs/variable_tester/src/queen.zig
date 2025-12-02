@@ -99,7 +99,7 @@ pub const Queen = struct {
             .next_task_idx = std.atomic.Value(u64).init(0),
             .total_tasks = 0,
             .results_found = std.atomic.Value(u64).init(0),
-            .best_score = std.atomic.Value(f64).init(0.0),
+            .best_score = 0.0,
             .mutex = std.Thread.Mutex{},
         };
 
