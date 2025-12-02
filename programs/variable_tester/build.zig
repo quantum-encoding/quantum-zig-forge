@@ -239,4 +239,36 @@ pub fn build(b: *std.Build) void {
 
     const compress_bench_step = b.step("compress-bench", "Run compression formula benchmark with real I/O");
     compress_bench_step.dependOn(&compress_bench_cmd.step);
+
+    // ==================== Test Function Shared Libraries ====================
+    // These are dynamically loadable test functions for the distributed swarm
+
+    // Test Interface module (shared types)
+    const test_interface_module = b.addModule("test_interface", .{
+        .root_source_file = b.path("src/test_interface.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+
+    // Compression Test Library (.so)
+    const libtest_compression = b.addSharedLibrary(.{
+        .name = "test_compression",
+        .root_source_file = b.path("src/libtest_compression.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    libtest_compression.linkLibC(); // Required for export symbols
+    b.installArtifact(libtest_compression);
+
+    const libtest_step = b.step("libtest", "Build test function shared libraries");
+    libtest_step.dependOn(&libtest_compression.step);
+
+    // Convenience step to build all swarm components
+    const swarm_step = b.step("swarm", "Build all swarm components (queen, worker, test libs)");
+    swarm_step.dependOn(&queen_exe.step);
+    swarm_step.dependOn(&worker_exe.step);
+    swarm_step.dependOn(&libtest_compression.step);
+
+    // Export test_interface module for worker
+    _ = test_interface_module;
 }
