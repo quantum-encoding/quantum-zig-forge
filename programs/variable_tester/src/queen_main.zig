@@ -28,7 +28,7 @@ pub fn main() !void {
     // Parse args
     var config = QueenConfig{};
     var start_num: u64 = 0;
-    var end_num: u64 = 10000;
+    var end_num: u64 = 10_000_000; // Default: 10 million
     var is_numeric_match = false;
 
     var args = try std.process.argsWithAllocator(allocator);
@@ -48,6 +48,10 @@ pub fn main() !void {
         } else if (std.mem.eql(u8, arg, "--end")) {
             if (args.next()) |end_str| {
                 end_num = try std.fmt.parseInt(u64, end_str, 10);
+            }
+        } else if (std.mem.eql(u8, arg, "--chunk")) {
+            if (args.next()) |chunk_str| {
+                config.chunk_size = try std.fmt.parseInt(u32, chunk_str, 10);
             }
         } else if (std.mem.eql(u8, arg, "--test")) {
             if (args.next()) |test_name| {
