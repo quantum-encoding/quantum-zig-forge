@@ -94,7 +94,7 @@ pub const Worker = struct {
 
         try posix.connect(self.sockfd, @ptrCast(&addr), @sizeOf(@TypeOf(addr)));
 
-        std.debug.print("🐝 Connected to Queen at {}:{}\n", .{ self.config.queen_host, self.config.queen_port });
+        std.debug.print("🐝 Connected to Queen at {s}:{}\n", .{ self.config.queen_host, self.config.queen_port });
 
         // Send hello
         const hello = protocol.WorkerHello.init(@intCast(self.num_threads), self.worker_id);
