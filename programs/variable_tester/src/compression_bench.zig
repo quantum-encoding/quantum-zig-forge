@@ -1149,17 +1149,18 @@ pub fn main() !void {
     if (formulas_path == null or input_path == null) {
         std.debug.print("Usage: compression-bench --formulas <file> --input <data_file> [--output <dir>] [--top N]\n\n", .{});
         std.debug.print("Supported algorithms:\n", .{});
-        std.debug.print("  RLE      - Run-Length Encoding\n", .{});
-        std.debug.print("  DELTA    - Delta Encoding\n", .{});
-        std.debug.print("  MTF      - Move-to-Front Transform\n", .{});
-        std.debug.print("  BWT      - Burrows-Wheeler Transform\n", .{});
-        std.debug.print("  ZERORLE  - Zero Run-Length (post-MTF)\n", .{});
-        std.debug.print("  LZ77     - Dictionary Compression\n", .{});
-        std.debug.print("  HUFFMAN  - Huffman Coding (stub)\n", .{});
+        std.debug.print("  RLE       - Run-Length Encoding\n", .{});
+        std.debug.print("  DELTA     - Delta Encoding\n", .{});
+        std.debug.print("  MTF       - Move-to-Front Transform\n", .{});
+        std.debug.print("  BWT       - Burrows-Wheeler Transform\n", .{});
+        std.debug.print("  ZERORLE   - Zero Run-Length (post-MTF)\n", .{});
+        std.debug.print("  LZ77      - Dictionary Compression\n", .{});
+        std.debug.print("  HUFFMAN   - Canonical Huffman Coding\n", .{});
+        std.debug.print("  ARITH     - Arithmetic Coding (near-optimal entropy)\n", .{});
         std.debug.print("\nExample formulas:\n", .{});
         std.debug.print("  RLE\n", .{});
         std.debug.print("  BWT+MTF+ZERORLE\n", .{});
-        std.debug.print("  LZ77+HUFFMAN\n", .{});
+        std.debug.print("  BWT+MTF+ARITH\n", .{});
         return;
     }
 
