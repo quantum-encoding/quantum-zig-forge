@@ -330,10 +330,10 @@ pub fn main() !void {
     };
 
     // Load tasks
-    var tasks = std.ArrayList([]const u8).init(allocator);
+    var tasks = std.ArrayListUnmanaged([]const u8){};
     defer {
         for (tasks.items) |t| allocator.free(t);
-        tasks.deinit();
+        tasks.deinit(allocator);
     }
 
     if (file_path) |path| {
