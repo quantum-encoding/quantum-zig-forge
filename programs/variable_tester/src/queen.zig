@@ -298,19 +298,19 @@ pub const Queen = struct {
 
         // Build dispatch message
         var payload = std.ArrayListUnmanaged(u8){};
-        defer payload.deinit();
+        defer payload.deinit(self.allocator);
 
         // Write dispatch header
         const dispatch = protocol.WorkDispatch.init(start_idx, actual_count, @intFromEnum(self.config.test_fn_id));
-        payload.appendSlice(std.mem.asBytes(&dispatch)) catch return;
+        payload.appendSlice(self.allocator, std.mem.asBytes(&dispatch)) catch return;
 
         // Write task entries
         var i = start_idx;
         while (i < end_idx) : (i += 1) {
             const task_data = self.tasks.items[i];
             const entry = protocol.TaskEntry.init(i, @intCast(task_data.len));
-            payload.appendSlice(std.mem.asBytes(&entry)) catch return;
-            payload.appendSlice(task_data) catch return;
+            payload.appendSlice(self.allocator, std.mem.asBytes(&entry)) catch return;
+            payload.appendSlice(self.allocator, task_data) catch return;
         }
 
         protocol.Net.sendMessage(sockfd, .dispatch_work, payload.items) catch |err| {
