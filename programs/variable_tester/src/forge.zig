@@ -341,17 +341,20 @@ pub fn main() !void {
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
 
-        const reader = file.reader();
-        var line_buf: [65536]u8 = undefined;
+        // Read entire file
+        const stat = try file.stat();
+        const contents = try allocator.alloc(u8, stat.size);
+        defer allocator.free(contents);
+        _ = try file.readAll(contents);
 
-        while (true) {
-            const line = reader.readUntilDelimiterOrEof(&line_buf, '\n') catch break;
-            if (line) |l| {
-                if (l.len > 0) {
-                    const task = try allocator.dupe(u8, l);
-                    try tasks.append(allocator, task);
-                }
-            } else break;
+        // Split into lines
+        var lines = std.mem.splitScalar(u8, contents, '\n');
+        while (lines.next()) |line| {
+            const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
+            if (trimmed.len > 0) {
+                const task = try allocator.dupe(u8, trimmed);
+                try tasks.append(allocator, task);
+            }
         }
     } else if (range_start != null and range_end != null) {
         // Generate numeric range
