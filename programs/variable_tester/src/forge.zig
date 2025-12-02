@@ -341,11 +341,11 @@ pub fn main() !void {
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
 
-        // Read entire file
+        // Read entire file using preadAll
         const stat = try file.stat();
         const contents = try allocator.alloc(u8, stat.size);
         defer allocator.free(contents);
-        _ = try file.readAll(contents);
+        _ = try file.preadAll(contents, 0);
 
         // Split into lines
         var lines = std.mem.splitScalar(u8, contents, '\n');
