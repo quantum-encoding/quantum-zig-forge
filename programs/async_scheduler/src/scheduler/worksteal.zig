@@ -176,12 +176,21 @@ pub const Scheduler = struct {
             // If we found work, continue immediately to check for more
             if (found_work) continue;
             // No work found - sleep on condition variable
-            // This prevents busy-waiting and allows clean shutdown
+            // CRITICAL: We must hold the lock while checking queues before wait(),
+            // otherwise we can miss wake signals (spawn() broadcasts while we're
+            // between the queue check above and wait() below)
             self.work_mutex.lock();
             // Double-check running flag before sleeping
             if (!self.running.load(.acquire)) {
                 self.work_mutex.unlock();
                 break;
+            }
+            // Re-check own queue while holding lock (prevents lost wake-ups)
+            if (self.work_queues[worker_id].pop()) |entry| {
+                self.work_mutex.unlock();
+                entry.execute();
+                self.unregisterTask(entry);
+                continue;
             }
             // Sleep until woken by new work or shutdown signal
             self.work_cond.wait(&self.work_mutex);
