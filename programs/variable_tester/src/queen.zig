@@ -256,6 +256,8 @@ pub const Queen = struct {
 
             switch (msg_header.msg_type) {
                 .request_work => {
+                    // Read the work request payload (even if we don't use it all)
+                    _ = protocol.Net.recvPayload(sockfd, &buffer, msg_header.payload_len) catch break;
                     self.handleWorkRequest(sockfd, worker_id, chunk_size);
                 },
                 .submit_result => {
