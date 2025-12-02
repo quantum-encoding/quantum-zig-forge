@@ -82,7 +82,7 @@ pub const WorkerContext = struct {
 pub fn workerThread(ctx: *WorkerContext) void {
     while (ctx.running.load(.acquire)) {
         // Try to get a task
-        const task = ctx.task_queue.pop() orelse {
+        const task = ctx.task_queue.pop() catch {
             // No tasks available, yield
             std.atomic.spinLoopHint();
             continue;
@@ -130,10 +130,10 @@ pub const VariableTester = struct {
         errdefer allocator.destroy(self);
 
         // Initialize task and result queues
-        const task_queue = try spsc.SpscQueue(Task).init(allocator, queue_capacity);
+        var task_queue = try spsc.SpscQueue(Task).init(allocator, queue_capacity);
         errdefer task_queue.deinit();
 
-        const result_queue = try spsc.SpscQueue(Result).init(allocator, queue_capacity);
+        var result_queue = try spsc.SpscQueue(Result).init(allocator, queue_capacity);
         errdefer result_queue.deinit();
 
         // Allocate worker arrays
@@ -205,7 +205,7 @@ pub const VariableTester = struct {
     }
 
     pub fn collectResult(self: *VariableTester) ?Result {
-        return self.result_queue.pop();
+        return self.result_queue.pop() catch null;
     }
 
     pub fn getStats(self: *VariableTester) TesterStats {

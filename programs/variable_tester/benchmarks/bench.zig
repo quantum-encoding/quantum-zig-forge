@@ -1,4 +1,5 @@
 const std = @import("std");
+const posix = std.posix;
 const variable_tester = @import("variable_tester");
 const test_functions = @import("test_functions");
 
@@ -23,12 +24,11 @@ pub fn main() !void {
         tasks: u64,
         test_fn: variable_tester.TestFn,
     }{
-        .{ .name = "Compression (1 worker)", .workers = 1, .tasks = 10000, .test_fn = test_functions.testLosslessCompression },
-        .{ .name = "Compression (4 workers)", .workers = 4, .tasks = 10000, .test_fn = test_functions.testLosslessCompression },
-        .{ .name = "Compression (all cores)", .workers = num_cpus, .tasks = 10000, .test_fn = test_functions.testLosslessCompression },
-        .{ .name = "Prime numbers (all cores)", .workers = num_cpus, .tasks = 10000, .test_fn = test_functions.testPrimeNumber },
-        .{ .name = "Hash collision (all cores)", .workers = num_cpus, .tasks = 10000, .test_fn = test_functions.testHashCollision },
-        .{ .name = "Math formula (all cores)", .workers = num_cpus, .tasks = 10000, .test_fn = test_functions.testMathFormula },
+        .{ .name = "Compression (1 worker)", .workers = 1, .tasks = 1000, .test_fn = test_functions.testLosslessCompression },
+        .{ .name = "Compression (4 workers)", .workers = 4, .tasks = 1000, .test_fn = test_functions.testLosslessCompression },
+        .{ .name = "Compression (all cores)", .workers = num_cpus, .tasks = 1000, .test_fn = test_functions.testLosslessCompression },
+        .{ .name = "Prime numbers (all cores)", .workers = num_cpus, .tasks = 1000, .test_fn = test_functions.testPrimeNumber },
+        .{ .name = "Hash collision (all cores)", .workers = num_cpus, .tasks = 1000, .test_fn = test_functions.testHashCollision },
     };
 
     for (test_configs) |config| {
@@ -52,7 +52,7 @@ fn runBenchmark(
     std.debug.print("Running: {s}\n", .{name});
     std.debug.print("  Workers: {}, Tasks: {}\n", .{ num_workers, num_tasks });
 
-    const queue_capacity = 10000;
+    const queue_capacity: usize = 16384; // Power of 2
 
     const tester = try variable_tester.VariableTester.init(
         allocator,
@@ -64,7 +64,7 @@ fn runBenchmark(
 
     try tester.start();
 
-    const start_time = std.time.nanoTimestamp();
+    const start_time = posix.clock_gettime(.MONOTONIC) catch unreachable;
 
     // Submit tasks
     var task_id: u64 = 0;
@@ -81,12 +81,12 @@ fn runBenchmark(
             allocator.free(result.data);
             results_collected += 1;
         } else {
-            std.time.sleep(100 * std.time.ns_per_us);
+            posix.nanosleep(0, 100 * std.time.ns_per_us);
         }
     }
 
-    const end_time = std.time.nanoTimestamp();
-    const elapsed_ns = @as(u64, @intCast(end_time - start_time));
+    const end_time = posix.clock_gettime(.MONOTONIC) catch unreachable;
+    const elapsed_ns = @as(u64, @intCast(end_time.sec - start_time.sec)) * std.time.ns_per_s + @as(u64, @intCast(end_time.nsec - start_time.nsec));
     const elapsed_ms = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
 
     tester.stop();

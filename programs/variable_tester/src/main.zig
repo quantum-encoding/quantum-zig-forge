@@ -1,6 +1,7 @@
 const std = @import("std");
-const variable_tester = @import("variable_tester.zig");
-const test_functions = @import("test_functions.zig");
+const posix = std.posix;
+const variable_tester = @import("variable_tester");
+const test_functions = @import("test_functions");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -17,7 +18,7 @@ pub fn main() !void {
     std.debug.print("Detected {} CPU cores\n", .{num_cpus});
 
     const num_workers = num_cpus;
-    const queue_capacity = 10000;
+    const queue_capacity: usize = 16384; // Must be power of 2
 
     std.debug.print("Initializing {} worker threads...\n", .{num_workers});
     std.debug.print("Queue capacity: {} tasks\n", .{queue_capacity});
@@ -61,7 +62,7 @@ pub fn main() !void {
     var results_collected: u64 = 0;
     var successful_results: u64 = 0;
 
-    const start_time = std.time.nanoTimestamp();
+    const start_time = (posix.clock_gettime(.MONOTONIC) catch unreachable);
 
     while (results_collected < num_tasks) {
         if (tester.collectResult()) |result| {
@@ -76,12 +77,12 @@ pub fn main() !void {
             allocator.free(result.data);
         } else {
             // No results available yet, yield
-            std.time.sleep(1 * std.time.ns_per_ms);
+            posix.nanosleep(0, 1 * std.time.ns_per_ms);
         }
     }
 
-    const end_time = std.time.nanoTimestamp();
-    const elapsed_ns = @as(u64, @intCast(end_time - start_time));
+    const end_time = (posix.clock_gettime(.MONOTONIC) catch unreachable);
+    const elapsed_ns = @as(u64, @intCast(end_time.sec - start_time.sec)) * std.time.ns_per_s + @as(u64, @intCast(end_time.nsec - start_time.nsec));
     const elapsed_ms = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(std.time.ns_per_ms));
 
     std.debug.print("\n", .{});

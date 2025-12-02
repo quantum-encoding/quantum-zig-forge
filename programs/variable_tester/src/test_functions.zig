@@ -1,5 +1,5 @@
 const std = @import("std");
-const variable_tester = @import("variable_tester.zig");
+const variable_tester = @import("variable_tester");
 
 /// Lossless Compression Test Function
 /// Tests if a given compression formula can compress data without loss
@@ -10,16 +10,16 @@ pub fn testLosslessCompression(task: *const variable_tester.Task, allocator: std
     const input_data = "AAAABBBCCDAA"; // Sample data to compress
 
     // Apply the formula (in this case, RLE)
-    var compressed = std.ArrayList(u8).init(allocator);
-    defer compressed.deinit();
+    var compressed = std.ArrayListUnmanaged(u8){};
+    defer compressed.deinit(allocator);
 
-    try runLengthEncode(input_data, &compressed);
+    try runLengthEncode(input_data, &compressed, allocator);
 
     // Decompress to verify losslessness
-    var decompressed = std.ArrayList(u8).init(allocator);
-    defer decompressed.deinit();
+    var decompressed = std.ArrayListUnmanaged(u8){};
+    defer decompressed.deinit(allocator);
 
-    try runLengthDecode(compressed.items, &decompressed);
+    try runLengthDecode(compressed.items, &decompressed, allocator);
 
     // Check if decompression matches original
     const success = std.mem.eql(u8, input_data, decompressed.items);
@@ -41,7 +41,7 @@ pub fn testLosslessCompression(task: *const variable_tester.Task, allocator: std
 }
 
 /// Simple Run-Length Encoding implementation
-fn runLengthEncode(input: []const u8, output: *std.ArrayList(u8)) !void {
+fn runLengthEncode(input: []const u8, output: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator) !void {
     if (input.len == 0) return;
 
     var i: usize = 0;
@@ -55,15 +55,15 @@ fn runLengthEncode(input: []const u8, output: *std.ArrayList(u8)) !void {
         }
 
         // Write count and character
-        try output.append(count);
-        try output.append(char);
+        try output.append(allocator, count);
+        try output.append(allocator, char);
 
         i += count;
     }
 }
 
 /// Run-Length Decoding
-fn runLengthDecode(input: []const u8, output: *std.ArrayList(u8)) !void {
+fn runLengthDecode(input: []const u8, output: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator) !void {
     var i: usize = 0;
     while (i + 1 < input.len) {
         const count = input[i];
@@ -72,7 +72,7 @@ fn runLengthDecode(input: []const u8, output: *std.ArrayList(u8)) !void {
         // Expand the run
         var j: u8 = 0;
         while (j < count) : (j += 1) {
-            try output.append(char);
+            try output.append(allocator, char);
         }
 
         i += 2;
@@ -161,7 +161,7 @@ pub fn testMathFormula(task: *const variable_tester.Task, allocator: std.mem.All
     const c = try std.fmt.parseInt(i64, std.mem.trim(u8, c_str, &std.ascii.whitespace), 10);
 
     const success = (a * a + b * b) == (c * c);
-    const score = if (success) 1.0 else 0.0;
+    const score: f64 = if (success) 1.0 else 0.0;
 
     return variable_tester.Result.init(task.id, success, task.data, score);
 }
