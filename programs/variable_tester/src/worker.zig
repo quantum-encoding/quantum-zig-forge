@@ -8,7 +8,7 @@
 
 const std = @import("std");
 const posix = std.posix;
-const protocol = @import("protocol.zig");
+const protocol = @import("protocol");
 const variable_tester = @import("variable_tester");
 const test_functions = @import("test_functions");
 
