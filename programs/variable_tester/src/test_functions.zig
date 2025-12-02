@@ -169,7 +169,7 @@ pub fn testMathFormula(task: *const variable_tester.Task, allocator: std.mem.All
 /// Numeric Match Test Function
 /// Exhaustive search benchmark - finds a specific "secret" number
 /// Used to verify swarm can search through millions of possibilities
-pub const SECRET_NUMBER: u64 = 734501;
+pub const SECRET_NUMBER: u64 = 8_734_501;
 
 pub fn testNumericMatch(task: *const variable_tester.Task, allocator: std.mem.Allocator) !variable_tester.Result {
     _ = allocator;
