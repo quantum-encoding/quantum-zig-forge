@@ -76,6 +76,7 @@ pub fn main() !void {
     std.debug.print("Configuration:\n", .{});
     std.debug.print("  Port: {}\n", .{config.port});
     std.debug.print("  Range: {} to {} ({} tasks)\n", .{ start_num, end_num, task_count });
+    std.debug.print("  Chunk Size: {} tasks/dispatch\n", .{config.chunk_size});
     std.debug.print("  Test: {}\n", .{config.test_fn_id});
     if (is_numeric_match) {
         std.debug.print("  Secret Number: {} (searching...)\n", .{test_functions.SECRET_NUMBER});
