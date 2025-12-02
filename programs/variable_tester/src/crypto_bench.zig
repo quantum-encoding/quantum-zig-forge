@@ -8,7 +8,7 @@ const posix = std.posix;
 const crypto = std.crypto;
 
 // Use ChaCha20-Poly1305 for authenticated encryption
-const ChaCha20Poly1305 = crypto.aead.chacha20_poly1305.ChaCha20Poly1305;
+const ChaCha20Poly1305 = crypto.aead.chacha_poly.ChaCha20Poly1305;
 
 // The "secret" 32-bit value we're searching for (embedded in bytes 0-3 of the key)
 const SECRET_KEY_FRAGMENT: u32 = 0xDEAD_BEEF;
