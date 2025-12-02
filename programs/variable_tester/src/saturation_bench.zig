@@ -38,8 +38,7 @@ fn searchRange(ctx: *ThreadContext) void {
         count += 1;
 
         // Format number to string (simulates parsing task data)
-        const len = std.fmt.formatIntBuf(&buf, i, 10, .lower, .{});
-        const num_str = buf[0..len];
+        const num_str = std.fmt.bufPrint(&buf, "{}", .{i}) catch continue;
 
         // Parse it back (simulates real test function work)
         const parsed = std.fmt.parseInt(u64, num_str, 10) catch continue;
