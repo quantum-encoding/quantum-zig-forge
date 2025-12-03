@@ -200,9 +200,73 @@ pub fn build(b: *std.Build) void {
     const trading_api_run_cmd = b.addRunArtifact(trading_api_exe);
     const trading_api_run_step = b.step("test-trading-api", "Test Alpaca trading API");
     trading_api_run_step.dependOn(&trading_api_run_cmd.step);
-    
-    // Real connection test command (commented out - file missing)
-    // const real_test_run_cmd = b.addRunArtifact(real_test_exe);
-    // const real_test_run_step = b.step("test-real-connections", "Test real Alpaca connections");
-    // real_test_run_step.dependOn(&real_test_run_cmd.step);
+
+    // ========================================================================
+    // Sentient Network Signal Broadcast
+    // ========================================================================
+
+    // Signal Broadcast static library (for Rust FFI)
+    const signal_module = b.createModule(.{
+        .root_source_file = b.path("src/signal_broadcast.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const signal_lib = b.addLibrary(.{
+        .linkage = .static,
+        .name = "signal_broadcast",
+        .root_module = signal_module,
+    });
+
+    signal_lib.linkLibC();
+    signal_lib.linkSystemLibrary("zmq");
+    signal_lib.installHeader(b.path("include/signal_broadcast.h"), "signal_broadcast.h");
+
+    b.installArtifact(signal_lib);
+
+    const signal_lib_step = b.step("signal-lib", "Build signal broadcast static library");
+    signal_lib_step.dependOn(&b.addInstallArtifact(signal_lib, .{}).step);
+
+    // Signal Broadcast executable (test server/client)
+    const signal_exe = b.addExecutable(.{
+        .name = "signal-broadcast",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/signal_broadcast.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    signal_exe.linkLibC();
+    signal_exe.linkSystemLibrary("zmq");
+
+    b.installArtifact(signal_exe);
+
+    // Signal server command
+    const signal_server_cmd = b.addRunArtifact(signal_exe);
+    signal_server_cmd.addArg("server");
+    const signal_server_step = b.step("signal-server", "Run signal broadcast server");
+    signal_server_step.dependOn(&signal_server_cmd.step);
+
+    // Signal client command
+    const signal_client_cmd = b.addRunArtifact(signal_exe);
+    signal_client_cmd.addArg("client");
+    const signal_client_step = b.step("signal-client", "Run signal broadcast client");
+    signal_client_step.dependOn(&signal_client_cmd.step);
+
+    // ========================================================================
+    // Tests
+    // ========================================================================
+
+    const signal_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/signal_broadcast.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    signal_tests.linkLibC();
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&b.addRunArtifact(signal_tests).step);
 }
