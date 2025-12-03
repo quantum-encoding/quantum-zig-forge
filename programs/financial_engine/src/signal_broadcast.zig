@@ -548,9 +548,8 @@ fn runClient(endpoint: [:0]const u8) !void {
     var subscriber = try SignalSubscriber.init(endpoint);
     defer subscriber.deinit();
 
-    // Subscribe to all signals
+    // Subscribe to all signals (but not heartbeats - receive() expects TradingSignal size)
     try subscriber.subscribe("");
-    try subscriber.subscribeHeartbeat();
 
     std.debug.print("Waiting for signals (Ctrl+C to stop)...\n\n", .{});
 
