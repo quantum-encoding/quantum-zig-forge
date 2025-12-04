@@ -2,15 +2,18 @@
 
 **Doctrine**: A defense is not battle-proven until it has faced a true adversary.
 
+**V8.2 Cardinal Rule**: A security tool that breaks the system is worse than no security.
+
 ## Architecture
 
-The Crucible is a dual-container adversarial testing environment for Guardian Shield V8.0:
+The Crucible is a dual-container adversarial testing environment for Guardian Shield V8.2:
 
 ### The Lamb (Defender)
 - **Purpose**: Protected environment with libwarden.so active
-- **Base**: Arch Linux with Zig 0.16 toolchain
-- **Protection**: Full Guardian Shield V8.0 (17 syscall interceptors)
+- **Base**: Arch Linux with development tools (git, gcc, python, make)
+- **Protection**: Full Guardian Shield V8.2 (17 syscall interceptors)
 - **Network**: `crucible-arena` (172.28.0.0/16)
+- **V8.2 NEW**: Runs comprehensive "normal operations" battery test on startup
 
 ### The Wolf (Attacker)
 - **Purpose**: Attempt to bypass Guardian Shield protections

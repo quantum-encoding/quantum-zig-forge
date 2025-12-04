@@ -1,12 +1,18 @@
 #!/bin/bash
-# deploy.sh - Secure deployment protocol for libwarden.so V7.1
-# Purpose: Deploy Guardian Shield V7.1 with Process-Aware Security
+# deploy.sh - Secure deployment protocol for libwarden.so V8.0
+# Purpose: Deploy Guardian Shield V8.0 with Full Path Hijacking Defense
 #
 # CRITICAL SAFETY FEATURES:
 # 1. Exclusive lock (flock) prevents race conditions during deployment
 # 2. Atomic file replacement (build -> verify -> swap)
 # 3. Rollback capability if verification fails
 # 4. Zero-downtime deployment (old library stays active until verified)
+#
+# V8.0 NEW FEATURES:
+# - Path hijacking defense (symlink, link, truncate, mkdir interceptors)
+# - SIGHUP config hot-reload
+# - wardenctl CLI management tool
+# - Granular permission flags (--no-delete, --no-move, --read-only, etc.)
 
 set -e  # Exit on any error
 
@@ -28,7 +34,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║  Guardian Shield V7.2 - Secure Deployment Protocol       ║${NC}"
+echo -e "${BLUE}║  Guardian Shield V8.0 - Secure Deployment Protocol        ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -70,7 +76,7 @@ acquire_lock
 
 # Step 2: Build the new library
 echo ""
-echo -e "${YELLOW}[BUILD] Compiling Guardian Shield V7.2...${NC}"
+echo -e "${YELLOW}[BUILD] Compiling Guardian Shield V8.0...${NC}"
 cd "$PROJECT_DIR"
 /usr/local/zig/zig build
 
@@ -91,8 +97,8 @@ if ! file zig-out/lib/libwarden.so | grep -q "ELF.*shared object"; then
     exit 1
 fi
 
-# Verify exported symbols
-REQUIRED_SYMBOLS=("unlink" "unlinkat" "rmdir" "open" "openat" "rename" "renameat")
+# Verify exported symbols - V8.0 includes path hijacking defense syscalls
+REQUIRED_SYMBOLS=("unlink" "unlinkat" "rmdir" "open" "openat" "rename" "renameat" "chmod" "execve" "symlink" "symlinkat" "link" "linkat" "truncate" "ftruncate" "mkdir" "mkdirat")
 for symbol in "${REQUIRED_SYMBOLS[@]}"; do
     if ! nm -D zig-out/lib/libwarden.so | grep -q " T $symbol$"; then
         echo -e "${RED}[ERROR] Missing required symbol: $symbol${NC}"
@@ -100,15 +106,15 @@ for symbol in "${REQUIRED_SYMBOLS[@]}"; do
     fi
 done
 
-# Verify V7.2 version string
-if ! strings zig-out/lib/libwarden.so | grep -q "Guardian Shield V7"; then
-    echo -e "${RED}[ERROR] V7.x version string not found in library${NC}"
+# Verify V8.0 version string
+if ! strings zig-out/lib/libwarden.so | grep -q "Guardian Shield V8"; then
+    echo -e "${RED}[ERROR] V8.x version string not found in library${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}[VERIFY] ✓ Library integrity confirmed${NC}"
-echo -e "${GREEN}[VERIFY] ✓ All 9 syscall hooks present (chmod, execve included)${NC}"
-echo -e "${GREEN}[VERIFY] ✓ V7.2 version confirmed (Process Exemptions for Build Tools)${NC}"
+echo -e "${GREEN}[VERIFY] ✓ All 17 syscall hooks present${NC}"
+echo -e "${GREEN}[VERIFY] ✓ V8.0 version confirmed (Path Fortress - Full Hijacking Defense)${NC}"
 
 # Step 4: Create backup directory
 echo ""
@@ -131,7 +137,7 @@ fi
 
 # Step 5: Atomic installation
 echo ""
-echo -e "${YELLOW}[INSTALL] Installing Guardian Shield V7.2...${NC}"
+echo -e "${YELLOW}[INSTALL] Installing Guardian Shield V8.0...${NC}"
 
 # Ensure target directory exists
 mkdir -p "$INSTALL_DIR"
@@ -153,47 +159,102 @@ mv -f "$INSTALL_DIR/${LIBRARY_NAME}.new" "$INSTALL_DIR/$LIBRARY_NAME"
 chmod 755 "$INSTALL_DIR/$LIBRARY_NAME"
 chown root:root "$INSTALL_DIR/$LIBRARY_NAME"
 
-echo -e "${GREEN}[INSTALL] ✓ Guardian Shield V7.2 installed to $INSTALL_DIR${NC}"
+echo -e "${GREEN}[INSTALL] ✓ Guardian Shield V8.0 installed to $INSTALL_DIR${NC}"
 
-# Step 6: LD_PRELOAD configuration instructions
+# Step 5b: Install wardenctl CLI tool
 echo ""
-echo -e "${YELLOW}[CONFIG] LD_PRELOAD Configuration${NC}"
-echo -e "${YELLOW}[CONFIG] To activate Guardian Shield, add to your shell rc file:${NC}"
+echo -e "${YELLOW}[INSTALL] Installing wardenctl CLI...${NC}"
+
+if [ -f "zig-out/bin/wardenctl" ]; then
+    cp zig-out/bin/wardenctl /usr/local/bin/wardenctl.new
+    mv -f /usr/local/bin/wardenctl.new /usr/local/bin/wardenctl
+    chmod 755 /usr/local/bin/wardenctl
+    chown root:root /usr/local/bin/wardenctl
+    echo -e "${GREEN}[INSTALL] ✓ wardenctl installed to /usr/local/bin${NC}"
+else
+    echo -e "${YELLOW}[INSTALL] ⚠ wardenctl not found - skipping CLI installation${NC}"
+fi
+
+# Step 6: System-wide preload configuration (BATTLE-PROVEN in Crucible)
+echo ""
+echo -e "${YELLOW}[CONFIG] Configuring system-wide protection via /etc/ld.so.preload...${NC}"
+
+# Use /etc/ld.so.preload for system-wide protection
+# This is CRITICAL - LD_PRELOAD env var does NOT protect SSH sessions, cron, systemd
+PRELOAD_FILE="/etc/ld.so.preload"
+PRELOAD_ENTRY="$INSTALL_DIR/$LIBRARY_NAME"
+
+# Check if already configured
+if [ -f "$PRELOAD_FILE" ] && grep -q "$PRELOAD_ENTRY" "$PRELOAD_FILE"; then
+    echo -e "${GREEN}[CONFIG] ✓ /etc/ld.so.preload already configured${NC}"
+else
+    # Backup existing preload file if it exists
+    if [ -f "$PRELOAD_FILE" ]; then
+        cp "$PRELOAD_FILE" "$BACKUP_DIR/ld.so.preload.$TIMESTAMP"
+        echo -e "${BLUE}[CONFIG] Backed up existing /etc/ld.so.preload${NC}"
+    fi
+
+    # Add libwarden to system-wide preload
+    echo "$PRELOAD_ENTRY" >> "$PRELOAD_FILE"
+    chmod 644 "$PRELOAD_FILE"
+    chown root:root "$PRELOAD_FILE"
+    echo -e "${GREEN}[CONFIG] ✓ Added to /etc/ld.so.preload (system-wide protection)${NC}"
+fi
+
+echo -e "${GREEN}[CONFIG] ✓ ALL processes now protected (SSH, cron, systemd, etc.)${NC}"
+
+# Also keep LD_PRELOAD in shell for backward compatibility
+echo ""
+echo -e "${YELLOW}[CONFIG] Optional: Shell LD_PRELOAD (for backward compatibility)${NC}"
+echo -e "${YELLOW}[CONFIG] Add to your shell rc file if needed:${NC}"
 echo -e "   ${BLUE}export LD_PRELOAD=\"$INSTALL_DIR/$LIBRARY_NAME\"${NC}"
-echo ""
-echo -e "${YELLOW}[CONFIG] Common locations:${NC}"
-echo -e "   • Bash: ~/.bashrc"
-echo -e "   • Zsh: ~/.zshrc"
-echo -e "   • Fish: ~/.config/fish/config.fish"
 
 # Step 7: Deployment summary
 echo ""
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║  Deployment Complete                                      ║${NC}"
+echo -e "${BLUE}║  Deployment Complete                                       ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "${GREEN}✓ Guardian Shield V7.2 deployed successfully${NC}"
-echo -e "${GREEN}✓ NEW: Process Exemptions - Build tools bypass ALL checks for performance${NC}"
-echo -e "${GREEN}✓ Exempt Processes: rustc, cargo, zig, gcc, g++, make, cmake, go, java${NC}"
+echo -e "${GREEN}✓ Guardian Shield V8.0 deployed successfully${NC}"
+echo -e "${GREEN}✓ NEW: Path Fortress - Full Path Hijacking Defense${NC}"
+echo -e "${GREEN}✓ NEW: symlink/link interception (blocks symlink/hardlink attacks)${NC}"
+echo -e "${GREEN}✓ NEW: truncate/mkdir interception (blocks data destruction & path injection)${NC}"
+echo -e "${GREEN}✓ NEW: SIGHUP hot-reload (wardenctl reload)${NC}"
+echo -e "${GREEN}✓ NEW: wardenctl CLI for runtime config management${NC}"
+echo -e "${GREEN}✓ Process Exemptions: Build tools bypass ALL checks for performance${NC}"
 echo -e "${GREEN}✓ Living Citadel: Directory structures protected, internal operations allowed${NC}"
 echo -e "${GREEN}✓ Git Compatible: .git/index.lock and other internal operations work${NC}"
 echo -e "${GREEN}✓ Memory Safe: No segfaults, no use-after-free, c_allocator${NC}"
-echo -e "${GREEN}✓ Intelligent Protection: rmdir/rename blocked on directories, files allowed${NC}"
-echo -e "${GREEN}✓ Protected syscalls: unlink, unlinkat, rmdir, open, openat, rename, renameat, chmod, execve${NC}"
+echo -e "${GREEN}✓ Protected syscalls (17): unlink, unlinkat, rmdir, open, openat, rename,${NC}"
+echo -e "${GREEN}                           renameat, chmod, execve, symlink, symlinkat,${NC}"
+echo -e "${GREEN}                           link, linkat, truncate, ftruncate, mkdir, mkdirat${NC}"
 echo -e "${GREEN}✓ Backups saved to: $BACKUP_DIR${NC}"
 echo ""
-echo -e "${YELLOW}⚠  Action required:${NC}"
-echo -e "   1. Open a new terminal or run: ${BLUE}source ~/.bashrc${NC}"
-echo -e "   2. Verify protection: ${BLUE}echo \$LD_PRELOAD${NC}"
-echo -e "   3. You should see: ${GREEN}[libwarden.so] 🛡️ Guardian Shield V7.2 - Scanning background process...${NC}"
-echo -e "   4. Test Rust build: ${BLUE}cargo build${NC}"
-echo -e "      (Should be fast now! Rust compiler bypasses all checks)"
+echo -e "${GREEN}⚡ System-wide protection is NOW ACTIVE via /etc/ld.so.preload${NC}"
 echo ""
-echo -e "${GREEN}The Guardian Shield V7.2 is now active.${NC}"
+echo -e "${YELLOW}Verification:${NC}"
+echo -e "   1. Run any command - you should see the Guardian Shield banner"
+echo -e "   2. Test wardenctl: ${BLUE}wardenctl status${NC}"
+echo -e "   3. SSH sessions are protected (battle-proven in Crucible)"
+echo -e "   4. Cron jobs are protected"
+echo -e "   5. Systemd services are protected"
+echo ""
+echo -e "${YELLOW}wardenctl Commands:${NC}"
+echo -e "   ${BLUE}wardenctl list${NC}                          # Show protected paths"
+echo -e "   ${BLUE}wardenctl add --path /data --read-only${NC}  # Add protected path"
+echo -e "   ${BLUE}wardenctl remove --path /data${NC}           # Remove protection"
+echo -e "   ${BLUE}wardenctl reload${NC}                        # Hot-reload config"
+echo -e "   ${BLUE}wardenctl test /etc/passwd delete${NC}       # Test if blocked"
+echo ""
+echo -e "${GREEN}The Guardian Shield V8.0 is now active.${NC}"
 echo ""
 
 # Rollback instructions
 echo -e "${YELLOW}Rollback to previous version (if needed):${NC}"
 echo -e "   sudo cp $BACKUP_DIR/${LIBRARY_NAME}.$TIMESTAMP $INSTALL_DIR/$LIBRARY_NAME"
-echo -e "   source ~/.bashrc"
+echo ""
+echo -e "${YELLOW}Disable Guardian Shield entirely (emergency):${NC}"
+echo -e "   sudo rm /etc/ld.so.preload"
+echo -e "   # Or remove just libwarden line:"
+echo -e "   sudo sed -i '\\|$INSTALL_DIR/$LIBRARY_NAME|d' /etc/ld.so.preload"
 echo ""

@@ -131,6 +131,69 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(adaptive_loader_exe);
 
     // ============================================================
+    // V8.0: wardenctl - Guardian Shield Control CLI
+    // ============================================================
+
+    // wardenctl - Runtime configuration management tool
+    const wardenctl_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/wardenctl/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const wardenctl = b.addExecutable(.{
+        .name = "wardenctl",
+        .root_module = wardenctl_module,
+    });
+    wardenctl.linkLibC();
+    b.installArtifact(wardenctl);
+
+    // ============================================================
+    // V8.0: Embeddable Warden Module & Static Library
+    // ============================================================
+
+    // libwarden_static.a - Static library for linking into applications
+    const libwarden_static_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/libwarden/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const libwarden_static = b.addLibrary(.{
+        .name = "warden_static",
+        .root_module = libwarden_static_module,
+        .linkage = .static,
+    });
+    libwarden_static.linkLibC();
+    libwarden_static.root_module.addCMacro("_FORTIFY_SOURCE", "0");
+    b.installArtifact(libwarden_static);
+
+    // warden module - Embeddable Zig module for programmatic control
+    // Programs can: @import("warden") to get protection APIs
+    const warden_embed_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/warden/warden.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Example program showing embedded warden usage
+    const warden_example_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "src/warden/example.zig" },
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "warden", .module = warden_embed_module },
+        },
+    });
+    const warden_example = b.addExecutable(.{
+        .name = "warden-example",
+        .root_module = warden_example_module,
+    });
+    warden_example.linkLibC();
+    b.installArtifact(warden_example);
+
+    // Install the warden module source for external projects to import
+    b.installFile("src/warden/warden.zig", "include/warden.zig");
+
+    // ============================================================
     // Tests
     // ============================================================
 

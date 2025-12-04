@@ -1,4 +1,4 @@
-# Guardian Shield V8.0 - Crucible Docker Compose
+# Guardian Shield V8.2 - Crucible Docker Compose
 # Orchestrates the Wolf (attacker) and Lamb (defender) containers
 #
 # Usage:
@@ -20,7 +20,7 @@ services:
     build:
       context: ..
       dockerfile: crucible/Dockerfile.lamb
-    image: crucible-lamb:v8.0
+    image: crucible-lamb:v8.2
     container_name: crucible-lamb
     hostname: lamb
     networks:
@@ -28,7 +28,7 @@ services:
         ipv4_address: 172.28.0.10
     labels:
       - "crucible.role=defender"
-      - "crucible.protection=guardian-shield-v8"
+      - "crucible.protection=guardian-shield-v8.2"
       - "crucible.doctrine=path-fortress"
     environment:
       - LD_PRELOAD=/usr/local/lib/security/libwarden.so
@@ -51,7 +51,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.wolf
-    image: crucible-wolf:v8.0
+    image: crucible-wolf:v8.2
     container_name: crucible-wolf
     hostname: wolf
     networks:

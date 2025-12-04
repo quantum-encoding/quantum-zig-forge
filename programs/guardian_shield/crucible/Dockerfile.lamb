@@ -1,17 +1,20 @@
 # THE LAMB - Guardian Shield Protected Container
-# Purpose: Defender with full Guardian Shield V8.0 protection
+# Purpose: Defender with full Guardian Shield V8.2 protection
 # Base: Arch Linux - libwarden.so is copied in pre-built
 #
 # Build from guardian_shield directory with pre-built artifacts:
-#   docker build -f crucible/Dockerfile.lamb -t crucible-lamb:v8.0 .
+#   docker build -f crucible/Dockerfile.lamb -t crucible-lamb:v8.2 .
+#
+# V8.2 CRITICAL: This container now runs a "normal operations" battery test
+# to verify libwarden does NOT break legitimate system operations.
 
 FROM archlinux:latest
 
 LABEL crucible.role="defender"
-LABEL crucible.protection="guardian-shield-v8"
+LABEL crucible.protection="guardian-shield-v8.2"
 LABEL crucible.doctrine="path-fortress"
 
-# Update system and install minimal tools
+# Update system and install tools needed for battery testing
 # Note: Arch containers need keyring refresh to avoid signature errors
 RUN pacman-key --init && \
     pacman-key --populate archlinux && \
@@ -20,7 +23,11 @@ RUN pacman-key --init && \
     pacman -S --noconfirm \
     openssh \
     sudo \
-    strace
+    strace \
+    git \
+    gcc \
+    make \
+    python
 
 # Create test user (restricted process)
 RUN useradd -m -s /bin/bash testuser && \
@@ -126,6 +133,11 @@ EOF
 RUN ssh-keygen -A && \
     echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
 
+# Copy the normal operations battery test and startup script
+COPY crucible/lamb/test-normal-ops.sh /usr/local/bin/test-normal-ops.sh
+COPY crucible/lamb/startup.sh /usr/local/bin/startup.sh
+RUN chmod +x /usr/local/bin/test-normal-ops.sh /usr/local/bin/startup.sh
+
 # CRITICAL: Use /etc/ld.so.preload for system-wide protection
 # This ensures ALL processes (including SSH sessions) load libwarden.so
 # Docker ENV LD_PRELOAD does NOT propagate to SSH child processes
@@ -137,5 +149,5 @@ ENV LD_PRELOAD=/usr/local/lib/security/libwarden.so
 # Expose SSH for Wolf to connect
 EXPOSE 22
 
-# Start SSH daemon and keep container running
-CMD ["/usr/sbin/sshd", "-D"]
+# Start with battery test, then SSH daemon
+CMD ["/usr/local/bin/startup.sh"]

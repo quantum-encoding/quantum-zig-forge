@@ -76,6 +76,158 @@ pub const AdvancedConfig = struct {
     allow_env_override: bool = false,
 };
 
+// ============================================================
+// V8.0: Granular Permission Flags
+// ============================================================
+//
+// CLI-style permission presets for easy path protection configuration.
+// These map to specific block_operations arrays.
+//
+// Usage: wardenctl add --path /some/path --no-delete --no-move
+//
+// Flags:
+//   --no-delete    : blocks unlink, unlinkat, rmdir
+//   --no-move      : blocks rename, renameat
+//   --no-truncate  : blocks truncate, ftruncate
+//   --no-write     : blocks open_write
+//   --no-symlink   : blocks symlink, symlinkat, symlink_target
+//   --no-link      : blocks link, linkat
+//   --no-mkdir     : blocks mkdir, mkdirat
+//   --read-only    : blocks all write/modify operations (all of the above)
+
+pub const PermissionFlags = struct {
+    no_delete: bool = false,
+    no_move: bool = false,
+    no_truncate: bool = false,
+    no_write: bool = false,
+    no_symlink: bool = false,
+    no_link: bool = false,
+    no_mkdir: bool = false,
+
+    const Self = @This();
+
+    /// Create flags from a --read-only preset
+    pub fn readOnly() Self {
+        return Self{
+            .no_delete = true,
+            .no_move = true,
+            .no_truncate = true,
+            .no_write = true,
+            .no_symlink = true,
+            .no_link = true,
+            .no_mkdir = true,
+        };
+    }
+
+    /// Convert flags to block_operations array
+    /// Returns a slice that must be freed by caller
+    pub fn toOperations(self: Self, allocator: std.mem.Allocator) ![][]const u8 {
+        var ops = std.ArrayList([]const u8).init(allocator);
+        errdefer ops.deinit();
+
+        if (self.no_delete) {
+            try ops.append("unlink");
+            try ops.append("unlinkat");
+            try ops.append("rmdir");
+        }
+        if (self.no_move) {
+            try ops.append("rename");
+            try ops.append("renameat");
+        }
+        if (self.no_truncate) {
+            try ops.append("truncate");
+            try ops.append("ftruncate");
+        }
+        if (self.no_write) {
+            try ops.append("open_write");
+        }
+        if (self.no_symlink) {
+            try ops.append("symlink");
+            try ops.append("symlinkat");
+            try ops.append("symlink_target");
+        }
+        if (self.no_link) {
+            try ops.append("link");
+            try ops.append("linkat");
+        }
+        if (self.no_mkdir) {
+            try ops.append("mkdir");
+            try ops.append("mkdirat");
+        }
+
+        return ops.toOwnedSlice();
+    }
+
+    /// Parse flags from command-line arguments
+    pub fn fromArgs(args: []const []const u8) Self {
+        var flags = Self{};
+        for (args) |arg| {
+            if (std.mem.eql(u8, arg, "--no-delete")) {
+                flags.no_delete = true;
+            } else if (std.mem.eql(u8, arg, "--no-move")) {
+                flags.no_move = true;
+            } else if (std.mem.eql(u8, arg, "--no-truncate")) {
+                flags.no_truncate = true;
+            } else if (std.mem.eql(u8, arg, "--no-write")) {
+                flags.no_write = true;
+            } else if (std.mem.eql(u8, arg, "--no-symlink")) {
+                flags.no_symlink = true;
+            } else if (std.mem.eql(u8, arg, "--no-link")) {
+                flags.no_link = true;
+            } else if (std.mem.eql(u8, arg, "--no-mkdir")) {
+                flags.no_mkdir = true;
+            } else if (std.mem.eql(u8, arg, "--read-only")) {
+                flags = readOnly();
+            }
+        }
+        return flags;
+    }
+
+    /// Check if any flag is set
+    pub fn anySet(self: Self) bool {
+        return self.no_delete or self.no_move or self.no_truncate or
+            self.no_write or self.no_symlink or self.no_link or self.no_mkdir;
+    }
+
+    /// Format as human-readable string
+    pub fn format(self: Self, writer: anytype) !void {
+        var first = true;
+        if (self.no_delete) {
+            try writer.writeAll("no-delete");
+            first = false;
+        }
+        if (self.no_move) {
+            if (!first) try writer.writeAll(", ");
+            try writer.writeAll("no-move");
+            first = false;
+        }
+        if (self.no_truncate) {
+            if (!first) try writer.writeAll(", ");
+            try writer.writeAll("no-truncate");
+            first = false;
+        }
+        if (self.no_write) {
+            if (!first) try writer.writeAll(", ");
+            try writer.writeAll("no-write");
+            first = false;
+        }
+        if (self.no_symlink) {
+            if (!first) try writer.writeAll(", ");
+            try writer.writeAll("no-symlink");
+            first = false;
+        }
+        if (self.no_link) {
+            if (!first) try writer.writeAll(", ");
+            try writer.writeAll("no-link");
+            first = false;
+        }
+        if (self.no_mkdir) {
+            if (!first) try writer.writeAll(", ");
+            try writer.writeAll("no-mkdir");
+        }
+    }
+};
+
 pub const DirectoryProtection = struct {
     enabled: bool = true,
     description: []const u8 = "",
@@ -161,14 +313,20 @@ const CONFIG_PATHS = [_][]const u8{
     "/etc/warden/warden-config.json",
     "/forge/config/warden-config-docker-test.json", // Docker test config
     "./config/warden-config.json",
+    "/home/founder/zig_forge/config/warden-config.json",
 };
 
 /// Load configuration from JSON file
 pub fn loadConfig(allocator: std.mem.Allocator) !Config {
+    // V8.1: Check if verbose mode is enabled
+    const verbose = if (std.posix.getenv("WARDEN_VERBOSE")) |v| std.mem.eql(u8, v, "1") else false;
+
     // Try each config path in order
     for (CONFIG_PATHS) |path| {
         if (loadConfigFromPath(allocator, path)) |config| {
-            std.debug.print("[libwarden.so] ✓ Loaded config from: {s}\n", .{path});
+            if (verbose) {
+                std.debug.print("[libwarden.so] ✓ Loaded config from: {s}\n", .{path});
+            }
             return config;
         } else |_| {
             continue;
@@ -176,7 +334,9 @@ pub fn loadConfig(allocator: std.mem.Allocator) !Config {
     }
 
     // If no config found, return error
-    std.debug.print("[libwarden.so] ⚠️  No config file found, using defaults\n", .{});
+    if (verbose) {
+        std.debug.print("[libwarden.so] ⚠️  No config file found, using defaults\n", .{});
+    }
     return error.ConfigNotFound;
 }
 
@@ -270,10 +430,20 @@ pub fn getDefaultConfig(allocator: std.mem.Allocator) !Config {
         .block_operations = &[_][]const u8{ "unlink", "unlinkat", "rmdir", "open_write" },
     };
 
-    var whitelisted_paths = try allocator.alloc(WhitelistedPath, 3);
+    // Get HOME from environment or use default
+    const home = std.posix.getenv("HOME") orelse "/home";
+
+    // Build user-specific paths
+    const user_tmp = try std.fmt.allocPrint(allocator, "{s}/tmp/", .{home});
+    const user_sandbox = try std.fmt.allocPrint(allocator, "{s}/sandbox/", .{home});
+    const user_claude = try std.fmt.allocPrint(allocator, "{s}/.claude/", .{home});
+
+    var whitelisted_paths = try allocator.alloc(WhitelistedPath, 5);
     whitelisted_paths[0] = WhitelistedPath{ .path = "/proc/self/", .description = "Process-specific" };
     whitelisted_paths[1] = WhitelistedPath{ .path = "/tmp/", .description = "Temporary directory" };
-    whitelisted_paths[2] = WhitelistedPath{ .path = "/var/tmp/", .description = "Persistent temp directory" };
+    whitelisted_paths[2] = WhitelistedPath{ .path = user_tmp, .description = "User temp" };
+    whitelisted_paths[3] = WhitelistedPath{ .path = user_sandbox, .description = "Sandbox" };
+    whitelisted_paths[4] = WhitelistedPath{ .path = user_claude, .description = "Claude Code directory" };
 
     return Config{
         .global = GlobalConfig{},
